@@ -9,3 +9,22 @@
 # OAuth secrets never go in the repo
 credentials*.json
 client_secret*.json
+
+# Go
+/gwork
+*.test
+*.out
+coverage.*
+go.work
+go.work.sum
+
+# Local token files and env
+tokens/
+.env
+.env.*
+
+# Editors / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
