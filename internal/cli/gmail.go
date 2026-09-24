@@ -1,14 +1,107 @@
 package cli
 
 import (
+	"errors"
+	"io"
+	"time"
+
 	"github.com/spf13/cobra"
 
 	"github.com/digio/gwork-cli/internal/auth"
+	"github.com/digio/gwork-cli/internal/output"
+	"github.com/digio/gwork-cli/internal/workspace/gmail"
 )
 
 // newGmailCmd returns the "gwork gmail" command group.
 func newGmailCmd(app *App) *cobra.Command {
 	cmd := serviceGroup(auth.Gmail, "Read Gmail messages, threads, labels and attachments")
-	_ = app // Phase 2: cmd.AddCommand(newGmailXxxCmd(app), ...)
+	cmd.AddCommand(
+		newGmailSearchCmd(app),
+		newGmailGetCmd(app),
+		newGmailThreadCmd(app),
+		newGmailLabelsCmd(app),
+		newGmailAttachmentCmd(app),
+	)
 	return cmd
+}
+
+func newGmailSearchCmd(app *App) *cobra.Command {
+	var (
+		maxResults       int
+		includeSpamTrash bool
+	)
+	cmd := &cobra.Command{
+		Use:   "search <query>",
+		Short: "Search messages with Gmail query syntax",
+		Long: "Search messages with Gmail query syntax, e.g.\n" +
+			"  gwork gmail search 'from:alice subject:report after:2026/09/01'\n" +
+			"  gwork gmail search 'has:attachment is:unread' --max 50",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if maxResults <= 0 {
+				return errors.New("--max must be positive")
+			}
+			ctx := cmd.Context()
+			opts, err := app.ClientOptions(ctx, auth.Gmail)
+			if err != nil {
+				return err
+			}
+			msgs, err := gmail.Search(ctx, args[0], gmail.SearchOptions{
+				MaxResults:       maxResults,
+				IncludeSpamTrash: includeSpamTrash,
+			}, opts...)
+			if err != nil {
+				return err
+			}
+			return app.Print(msgs, func(w io.Writer) error {
+				rows := make([][]string, 0, len(msgs))
+				for _, m := range msgs {
+					rows = append(rows, []string{
+						formatGmailDate(m.Date),
+						output.Ellipsize(m.From, 30),
+						output.Ellipsize(m.Subject, 60),
+						m.ID,
+					})
+				}
+				return output.Table(w, []string{"DATE", "FROM", "SUBJECT", "ID"}, rows)
+			})
+		},
+	}
+	cmd.Flags().IntVar(&maxResults, "max", gmail.DefaultMaxResults, "maximum number of messages")
+	cmd.Flags().BoolVar(&includeSpamTrash, "include-spam-trash", false, "also search Spam and Trash")
+	return cmd
+}
+
+func newGmailLabelsCmd(app *App) *cobra.Command {
+	return &cobra.Command{
+		Use:   "labels",
+		Short: "List Gmail labels",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			ctx := cmd.Context()
+			opts, err := app.ClientOptions(ctx, auth.Gmail)
+			if err != nil {
+				return err
+			}
+			labels, err := gmail.ListLabels(ctx, opts...)
+			if err != nil {
+				return err
+			}
+			return app.Print(labels, func(w io.Writer) error {
+				rows := make([][]string, 0, len(labels))
+				for _, l := range labels {
+					rows = append(rows, []string{l.ID, l.Name, l.Type})
+				}
+				return output.Table(w, []string{"ID", "NAME", "TYPE"}, rows)
+			})
+		},
+	}
+}
+
+// formatGmailDate renders a message date in local time for text output.
+func formatGmailDate(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.Local().Format("2006-01-02 15:04")
 }
