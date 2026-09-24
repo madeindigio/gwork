@@ -1,0 +1,116 @@
+# GoReleaser configuration for gwork (https://goreleaser.com, schema v2).
+#
+# Local snapshot (no publishing, no secrets required):
+#   make snapshot
+#
+# Release (CI): pushing a tag v* runs .github/workflows/release.yml, which
+# provides GWORK_OAUTH_CLIENT_ID, GWORK_OAUTH_CLIENT_SECRET and
+# GWORK_HOSTED_DOMAIN from repository secrets. They are embedded with -X
+# ldflags and never written to the repository. When they are unset (local
+# snapshots), the binaries are built without an embedded OAuth client and need
+# --credentials / GWORK_CREDENTIALS / <config>/credentials.json at login.
+version: 2
+
+project_name: gwork
+
+before:
+  hooks:
+    - go mod download
+    - go mod verify
+
+builds:
+  - id: gwork
+    main: ./cmd/gwork
+    binary: gwork
+    env:
+      # Pure Go on every platform: go-keyring shells out to /usr/bin/security
+      # on macOS, uses D-Bus (godbus) on Linux and wincred syscalls on Windows.
+      - CGO_ENABLED=0
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X github.com/digio/gwork-cli/internal/buildinfo.Version={{ .Version }}
+      - -X github.com/digio/gwork-cli/internal/buildinfo.Commit={{ .ShortCommit }}
+      - -X github.com/digio/gwork-cli/internal/buildinfo.Date={{ .Date }}
+      - -X github.com/digio/gwork-cli/internal/buildinfo.OAuthClientID={{ envOrDefault "GWORK_OAUTH_CLIENT_ID" "" }}
+      - -X github.com/digio/gwork-cli/internal/buildinfo.OAuthClientSecret={{ envOrDefault "GWORK_OAUTH_CLIENT_SECRET" "" }}
+      - -X github.com/digio/gwork-cli/internal/buildinfo.HostedDomain={{ envOrDefault "GWORK_HOSTED_DOMAIN" "" }}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+# Code signing / notarization placeholder (digio holds Apple and Windows
+# certificates). Enable when the secrets are available in CI, e.g.:
+#
+# notarize:
+#   macos:
+#     - enabled: '{{ isEnvSet "MACOS_SIGN_P12" }}'
+#       sign:
+#         certificate: "{{ .Env.MACOS_SIGN_P12 }}"
+#         password: "{{ .Env.MACOS_SIGN_PASSWORD }}"
+#       notarize:
+#         issuer_id: "{{ .Env.MACOS_NOTARY_ISSUER_ID }}"
+#         key_id: "{{ .Env.MACOS_NOTARY_KEY_ID }}"
+#         key: "{{ .Env.MACOS_NOTARY_KEY }}"
+#
+# signs:
+#   - id: windows-authenticode
+#     ids: [gwork]
+#     artifacts: binary
+#     cmd: osslsigncode   # or signtool / a cloud signing service
+#     args: [...]
+
+archives:
+  - id: default
+    ids: [gwork]
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    files:
+      - LICENSE
+      - README.md
+      - docs/mcp.md
+      - docs/setup-google-cloud.md
+      - docs/workspace-admin.md
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  use: git
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - "^ci:"
+      - "Merge pull request"
+      - "Merge branch"
+  groups:
+    - title: Features
+      regexp: '^.*?feat(\(.+\))??!?:.+$'
+      order: 0
+    - title: Bug fixes
+      regexp: '^.*?fix(\(.+\))??!?:.+$'
+      order: 1
+    - title: Other changes
+      order: 999
+
+release:
+  github:
+    owner: digio
+    name: gwork-cli
+  draft: false
+  prerelease: auto
+  footer: |
+    Verify downloads with `sha256sum -c checksums.txt`.
+    Setup guide: https://github.com/digio/gwork-cli#first-time-setup

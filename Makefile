@@ -31,7 +31,11 @@ GOLANGCI_LINT ?= $(shell command -v golangci-lint 2>/dev/null || echo "go run gi
 
 GOFLAGS_BUILD := -trimpath -ldflags "$(LDFLAGS)"
 
-.PHONY: all build install test race cover lint fmt vet tidy clean
+# GoReleaser (pinned; override with GORELEASER=goreleaser to use an installed one).
+GORELEASER_VERSION ?= v2.18.2
+GORELEASER ?= go run github.com/goreleaser/goreleaser/v2@$(GORELEASER_VERSION)
+
+.PHONY: all build install test race cover lint fmt vet tidy clean release-check snapshot smoke
 
 all: fmt vet lint test build
 
@@ -60,6 +64,15 @@ vet: ## Run go vet
 
 tidy: ## Tidy go.mod/go.sum
 	go mod tidy
+
+release-check: ## Validate .goreleaser.yaml
+	$(GORELEASER) check
+
+snapshot: ## Build release archives for every platform into dist/ (no publish)
+	@$(GORELEASER) release --snapshot --clean --skip=publish
+
+smoke: build ## Run the smoke test against the real tenant (needs gwork auth login; see docs/smoke-test.md)
+	GWORK_BIN=$(BIN_DIR)/$(BINARY) ./scripts/smoke.sh
 
 clean:
 	rm -rf $(BIN_DIR) dist coverage.out

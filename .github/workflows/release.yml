@@ -1,0 +1,57 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write # create the GitHub release and upload assets
+
+jobs:
+  goreleaser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history for the changelog
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Check OAuth secrets are set
+        env:
+          GWORK_OAUTH_CLIENT_ID: ${{ secrets.GWORK_OAUTH_CLIENT_ID }}
+          GWORK_OAUTH_CLIENT_SECRET: ${{ secrets.GWORK_OAUTH_CLIENT_SECRET }}
+        run: |
+          if [ -z "$GWORK_OAUTH_CLIENT_ID" ] || [ -z "$GWORK_OAUTH_CLIENT_SECRET" ]; then
+            echo "::error::GWORK_OAUTH_CLIENT_ID / GWORK_OAUTH_CLIENT_SECRET secrets are missing; releases must embed the OAuth client"
+            exit 1
+          fi
+
+      - name: Test
+        run: go test -race ./...
+
+      - name: GoReleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Embedded OAuth Desktop client and hd hint (see docs/setup-google-cloud.md).
+          # Injected with -X ldflags; never committed. GoReleaser does not echo them.
+          GWORK_OAUTH_CLIENT_ID: ${{ secrets.GWORK_OAUTH_CLIENT_ID }}
+          GWORK_OAUTH_CLIENT_SECRET: ${{ secrets.GWORK_OAUTH_CLIENT_SECRET }}
+          GWORK_HOSTED_DOMAIN: ${{ secrets.GWORK_HOSTED_DOMAIN }}
+          # Code signing placeholder: add these secrets and enable the
+          # notarize/signs sections of .goreleaser.yaml (GoReleaser's
+          # built-in macOS sign+notarize pipe runs on this Linux runner).
+          # MACOS_SIGN_P12: ${{ secrets.MACOS_SIGN_P12 }}
+          # MACOS_SIGN_PASSWORD: ${{ secrets.MACOS_SIGN_PASSWORD }}
+          # MACOS_NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
+          # MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          # MACOS_NOTARY_KEY: ${{ secrets.MACOS_NOTARY_KEY }}
+          # WINDOWS_SIGN_PFX: ${{ secrets.WINDOWS_SIGN_PFX }}
+          # WINDOWS_SIGN_PASSWORD: ${{ secrets.WINDOWS_SIGN_PASSWORD }}
