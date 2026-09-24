@@ -1,0 +1,11 @@
+# Local tooling state
+.pando/
+.pando.toml
+
+# Build output
+/bin/
+/dist/
+
+# OAuth secrets never go in the repo
+credentials*.json
+client_secret*.json
