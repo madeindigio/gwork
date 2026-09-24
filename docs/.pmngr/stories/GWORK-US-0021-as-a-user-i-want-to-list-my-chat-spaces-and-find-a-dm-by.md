@@ -2,14 +2,15 @@
 id: GWORK-US-0021
 type: story
 title: As a user I want to list my Chat spaces and find a DM by email
-status: backlog
+status: done
 priority: high
 parent: GWORK-EP-0006
 milestone: GWORK-M-0002
 author: mcp
 estimate: 2
 created: 2026-09-24T21:17:24Z
-updated: 2026-09-24T21:17:24Z
+updated: 2026-09-24T22:13:35Z
+closed: 2026-09-24T22:13:35Z
 ---
 
 ## Description

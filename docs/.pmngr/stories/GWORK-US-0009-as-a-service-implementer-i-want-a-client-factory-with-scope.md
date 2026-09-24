@@ -2,14 +2,15 @@
 id: GWORK-US-0009
 type: story
 title: As a service implementer I want a client factory with scope checks and error classification
-status: backlog
+status: done
 priority: critical
 parent: GWORK-EP-0002
 milestone: GWORK-M-0001
 author: mcp
 estimate: 3
 created: 2026-09-24T21:16:32Z
-updated: 2026-09-24T21:16:32Z
+updated: 2026-09-24T22:13:34Z
+closed: 2026-09-24T22:13:34Z
 ---
 
 ## Description

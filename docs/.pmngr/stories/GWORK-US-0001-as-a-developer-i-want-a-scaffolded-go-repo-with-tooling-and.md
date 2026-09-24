@@ -2,14 +2,15 @@
 id: GWORK-US-0001
 type: story
 title: As a developer I want a scaffolded Go repo with tooling and CI
-status: backlog
+status: done
 priority: critical
 parent: GWORK-EP-0001
 milestone: GWORK-M-0001
 author: mcp
 estimate: 3
 created: 2026-09-24T21:16:31Z
-updated: 2026-09-24T21:16:31Z
+updated: 2026-09-24T22:13:11Z
+closed: 2026-09-24T22:13:11Z
 ---
 
 ## Description

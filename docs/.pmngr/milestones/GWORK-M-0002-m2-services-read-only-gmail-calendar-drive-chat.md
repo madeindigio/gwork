@@ -2,10 +2,11 @@
 id: GWORK-M-0002
 type: milestone
 title: M2 Services read-only (Gmail, Calendar, Drive, Chat)
-status: backlog
+status: done
 author: mcp
 created: 2026-09-24T21:15:39Z
-updated: 2026-09-24T21:15:39Z
+updated: 2026-09-24T22:13:46Z
+closed: 2026-09-24T22:13:46Z
 due: 2026-10-30
 ---
 

@@ -2,14 +2,15 @@
 id: GWORK-US-0006
 type: story
 title: As a user I want to log in via browser with loopback redirect and PKCE
-status: backlog
+status: done
 priority: critical
 parent: GWORK-EP-0002
 milestone: GWORK-M-0001
 author: mcp
 estimate: 5
 created: 2026-09-24T21:16:31Z
-updated: 2026-09-24T21:16:31Z
+updated: 2026-09-24T22:13:34Z
+closed: 2026-09-24T22:13:34Z
 ---
 
 ## Description

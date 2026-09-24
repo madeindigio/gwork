@@ -2,13 +2,14 @@
 id: GWORK-EP-0008
 type: epic
 title: Release, distribution and documentation
-status: backlog
+status: in_progress
 priority: medium
 milestone: GWORK-M-0003
 author: mcp
 labels: [release, docs]
 created: 2026-09-24T21:16:00Z
-updated: 2026-09-24T21:16:00Z
+updated: 2026-09-24T22:13:46Z
+started: 2026-09-24T22:13:46Z
 ---
 
 ## Description

@@ -2,14 +2,15 @@
 id: GWORK-US-0020
 type: story
 title: As an AI agent I want Drive MCP tools
-status: backlog
+status: done
 priority: high
 parent: GWORK-EP-0005
 milestone: GWORK-M-0002
 author: mcp
 estimate: 2
 created: 2026-09-24T21:17:00Z
-updated: 2026-09-24T21:17:00Z
+updated: 2026-09-24T22:13:35Z
+closed: 2026-09-24T22:13:35Z
 ---
 
 ## Description

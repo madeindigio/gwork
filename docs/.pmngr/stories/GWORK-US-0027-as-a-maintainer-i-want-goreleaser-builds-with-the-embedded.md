@@ -2,14 +2,15 @@
 id: GWORK-US-0027
 type: story
 title: As a maintainer I want GoReleaser builds with the embedded OAuth client
-status: backlog
+status: done
 priority: high
 parent: GWORK-EP-0008
 milestone: GWORK-M-0003
 author: mcp
 estimate: 3
 created: 2026-09-24T21:17:24Z
-updated: 2026-09-24T21:17:24Z
+updated: 2026-09-24T22:13:35Z
+closed: 2026-09-24T22:13:35Z
 ---
 
 ## Description

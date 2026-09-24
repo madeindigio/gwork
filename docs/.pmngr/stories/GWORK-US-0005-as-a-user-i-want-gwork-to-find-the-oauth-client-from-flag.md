@@ -2,14 +2,15 @@
 id: GWORK-US-0005
 type: story
 title: As a user I want gwork to find the OAuth client from flag, env, config or embedded build
-status: backlog
+status: done
 priority: critical
 parent: GWORK-EP-0002
 milestone: GWORK-M-0001
 author: mcp
 estimate: 2
 created: 2026-09-24T21:16:31Z
-updated: 2026-09-24T21:16:31Z
+updated: 2026-09-24T22:13:34Z
+closed: 2026-09-24T22:13:34Z
 ---
 
 ## Description

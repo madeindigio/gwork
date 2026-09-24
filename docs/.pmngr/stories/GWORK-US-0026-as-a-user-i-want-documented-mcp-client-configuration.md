@@ -2,14 +2,15 @@
 id: GWORK-US-0026
 type: story
 title: As a user I want documented MCP client configuration
-status: backlog
+status: done
 priority: medium
 parent: GWORK-EP-0007
 milestone: GWORK-M-0003
 author: mcp
 estimate: 1
 created: 2026-09-24T21:17:24Z
-updated: 2026-09-24T21:17:24Z
+updated: 2026-09-24T22:13:35Z
+closed: 2026-09-24T22:13:35Z
 ---
 
 ## Description

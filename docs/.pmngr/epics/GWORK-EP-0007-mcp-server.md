@@ -2,13 +2,14 @@
 id: GWORK-EP-0007
 type: epic
 title: MCP server
-status: backlog
+status: done
 priority: high
 milestone: GWORK-M-0002
 author: mcp
 labels: [mcp]
 created: 2026-09-24T21:16:00Z
-updated: 2026-09-24T21:16:00Z
+updated: 2026-09-24T22:13:46Z
+closed: 2026-09-24T22:13:46Z
 ---
 
 ## Description

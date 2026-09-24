@@ -2,13 +2,14 @@
 id: GWORK-EP-0003
 type: epic
 title: Gmail read-only
-status: backlog
+status: done
 priority: high
 milestone: GWORK-M-0002
 author: mcp
 labels: [gmail]
 created: 2026-09-24T21:16:00Z
-updated: 2026-09-24T21:16:00Z
+updated: 2026-09-24T22:13:45Z
+closed: 2026-09-24T22:13:45Z
 ---
 
 ## Description
