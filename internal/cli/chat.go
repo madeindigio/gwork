@@ -241,7 +241,7 @@ func newChatSearchCmd(app *App) *cobra.Command {
 				chat.NewNameResolver(svc).Resolve(ctx, res.Matches)
 			}
 			for _, f := range res.FailedSpaces {
-				_, _ = fmt.Fprintf(app.Err, "warning: could not read %s: %s\n", f.Space, f.Error)
+				_, _ = fmt.Fprintf(app.Err, "warning: could not read %s: %s\n", output.Sanitize(f.Space), output.Sanitize(f.Error))
 			}
 			if res.CapReached {
 				_, _ = fmt.Fprintf(app.Err, "warning: stopped after scanning %d messages (--max-scan); results may be incomplete\n", res.Scanned)

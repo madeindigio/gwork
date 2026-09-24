@@ -100,6 +100,17 @@ func TestSearchFullTextHasNoDefaultOrder(t *testing.T) {
 	}
 }
 
+func TestSearchRawFullTextHasNoDefaultOrder(t *testing.T) {
+	fd := newFakeDrive(t)
+	if _, err := Search(context.Background(), SearchOptions{RawQuery: "fullText contains 'budget'"}, fd.options()...); err != nil {
+		t.Fatal(err)
+	}
+	q := fd.requestsTo("/files")[0].Query()
+	if q.Has("orderBy") {
+		t.Errorf("orderBy = %q, want unset for a raw full-text query", q.Get("orderBy"))
+	}
+}
+
 func TestSearchInvalidOptions(t *testing.T) {
 	fd := newFakeDrive(t)
 	if _, err := Search(context.Background(), SearchOptions{Type: "nope"}, fd.options()...); err == nil {

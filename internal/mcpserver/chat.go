@@ -11,9 +11,18 @@ import (
 	"github.com/digio/gwork-cli/internal/workspace/chat"
 )
 
+// Caps on chat tool inputs, so one call cannot page through an unbounded
+// number of messages.
+const (
+	// chatMaxResults caps max_results of the chat tools.
+	chatMaxResults = 1000
+	// chatMaxScan caps max_scan of chat_search_messages.
+	chatMaxScan = 20000
+)
+
 type chatListSpacesInput struct {
 	Type       string `json:"type,omitempty" jsonschema:"only this space type: space, group or dm (default: all)"`
-	MaxResults int    `json:"max_results,omitempty" jsonschema:"maximum number of spaces (default 100)"`
+	MaxResults int    `json:"max_results,omitempty" jsonschema:"maximum number of spaces (default 100, max 1000)"`
 }
 
 type chatListSpacesOutput struct {
@@ -34,7 +43,7 @@ type chatListMessagesInput struct {
 	Until      string `json:"until,omitempty" jsonschema:"only messages created before this time (same syntax as since)"`
 	Thread     string `json:"thread,omitempty" jsonschema:"only messages of this thread (spaces/S/threads/T or bare T)"`
 	Order      string `json:"order,omitempty" jsonschema:"asc (oldest first) or desc (newest first, default)"`
-	MaxResults int    `json:"max_results,omitempty" jsonschema:"maximum number of messages (default 50)"`
+	MaxResults int    `json:"max_results,omitempty" jsonschema:"maximum number of messages (default 50, max 1000)"`
 	MaxChars   int    `json:"max_chars,omitempty" jsonschema:"maximum characters of each message text (default 20000)"`
 }
 
@@ -57,8 +66,8 @@ type chatSearchMessagesInput struct {
 	Text       string   `json:"text" jsonschema:"words to find; case-insensitive, every word must appear"`
 	Spaces     []string `json:"spaces,omitempty" jsonschema:"limit the search to these spaces (spaces/XXX or bare ids); default: all spaces of the user"`
 	Since      string   `json:"since,omitempty" jsonschema:"only messages created at or after this time (default 7d)"`
-	MaxResults int      `json:"max_results,omitempty" jsonschema:"maximum number of matches returned (default 50)"`
-	MaxScan    int      `json:"max_scan,omitempty" jsonschema:"maximum number of messages examined (default 2000)"`
+	MaxResults int      `json:"max_results,omitempty" jsonschema:"maximum number of matches returned (default 50, max 1000)"`
+	MaxScan    int      `json:"max_scan,omitempty" jsonschema:"maximum number of messages examined (default 2000, max 20000)"`
 	MaxChars   int      `json:"max_chars,omitempty" jsonschema:"maximum characters of each message text (default 20000)"`
 }
 
@@ -80,7 +89,7 @@ func registerChat(s *mcp.Server, deps Deps) {
 		if err != nil {
 			return chatListSpacesOutput{}, err
 		}
-		spaces, err := chat.ListSpaces(ctx, svc, chat.ListSpacesOptions{Type: in.Type, Max: in.MaxResults})
+		spaces, err := chat.ListSpaces(ctx, svc, chat.ListSpacesOptions{Type: in.Type, Max: min(in.MaxResults, chatMaxResults)})
 		if err != nil {
 			return chatListSpacesOutput{}, err
 		}
@@ -105,7 +114,7 @@ func registerChat(s *mcp.Server, deps Deps) {
 	addReadOnlyTool(s, deps, auth.Chat, &mcp.Tool{
 		Name: "chat_list_messages",
 		Description: "List messages of a Google Chat space, newest first by default, optionally within a time window " +
-			"and/or one thread. Senders are users/{id}; display names are filled in from space memberships when " +
+			"and/or one thread (max_results up to 1000). Senders are users/{id}; display names are filled in from space memberships when " +
 			"Google provides them. since/until: " + timeExpressions,
 	}, func(ctx context.Context, in chatListMessagesInput) (chatMessagesOutput, error) {
 		win, err := timeutil.ParseWindow(in.Since, in.Until, deps.CurrentTime(), "", "")
@@ -121,7 +130,7 @@ func registerChat(s *mcp.Server, deps Deps) {
 			return chatMessagesOutput{}, err
 		}
 		msgs, err := chat.ListMessages(ctx, svc, in.Space, chat.ListMessagesOptions{
-			Window: win, Thread: in.Thread, Max: in.MaxResults, Order: order,
+			Window: win, Thread: in.Thread, Max: min(in.MaxResults, chatMaxResults), Order: order,
 		})
 		if err != nil {
 			return chatMessagesOutput{}, err
@@ -154,7 +163,7 @@ func registerChat(s *mcp.Server, deps Deps) {
 		Description: "Search Google Chat messages containing text (case-insensitive; all words must appear). " +
 			"LIMITATION: Chat has no server-side text search, so this lists the messages of each space " +
 			"(all spaces, or the given ones) created since `since` (default 7d) and filters them locally, " +
-			"stopping after max_scan messages. When cap_reached is true results may be incomplete: narrow " +
+			"stopping after max_scan messages (default 2000, max 20000). When cap_reached is true results may be incomplete: narrow " +
 			"since or spaces. Matches are newest first; scanned and spaces_scanned report the coverage. " +
 			"since: " + timeExpressions,
 	}, func(ctx context.Context, in chatSearchMessagesInput) (chatSearchMessagesOutput, error) {
@@ -167,7 +176,8 @@ func registerChat(s *mcp.Server, deps Deps) {
 			return chatSearchMessagesOutput{}, err
 		}
 		res, err := chat.SearchMessages(ctx, svc, chat.SearchOptions{
-			Text: in.Text, Spaces: in.Spaces, Window: win, Max: in.MaxResults, MaxScan: in.MaxScan,
+			Text: in.Text, Spaces: in.Spaces, Window: win,
+			Max: min(in.MaxResults, chatMaxResults), MaxScan: min(in.MaxScan, chatMaxScan),
 		})
 		if err != nil {
 			return chatSearchMessagesOutput{}, err

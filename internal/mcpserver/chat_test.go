@@ -2,8 +2,10 @@ package mcpserver
 
 import (
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -192,5 +194,50 @@ func TestChatToolsNotGranted(t *testing.T) {
 	}
 	if _, ok := listTools(t, cs)["chat_list_spaces"]; ok {
 		t.Error("chat tools must not be registered without the chat grant")
+	}
+}
+
+// endlessChatMux serves spaces/E whose messages.list always returns a full
+// page of non-matching messages and another page token, and counts the
+// messages served.
+func endlessChatMux(t *testing.T, served *atomic.Int64) *http.ServeMux {
+	t.Helper()
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /v1/spaces/E/messages", func(w http.ResponseWriter, r *http.Request) {
+		size, _ := strconv.Atoi(r.URL.Query().Get("pageSize"))
+		msgs := make([]any, size)
+		for i := range msgs {
+			msgs[i] = chatToolMsg("spaces/E", strconv.Itoa(i), "hay", testNow.Add(-time.Minute))
+		}
+		served.Add(int64(size))
+		testutil.WriteJSON(t, w, map[string]any{"messages": msgs, "nextPageToken": "more"})
+	})
+	mux.HandleFunc("GET /v1/spaces/E/members", func(w http.ResponseWriter, r *http.Request) {
+		testutil.WriteJSON(t, w, map[string]any{"memberships": []any{}})
+	})
+	return mux
+}
+
+func TestChatToolsClampLimits(t *testing.T) {
+	var served atomic.Int64
+	cs, _ := newTestSession(t, testDeps(t, endlessChatMux(t, &served)), auth.Chat)
+
+	out, res := callTool[chatMessagesOutput](t, cs, "chat_list_messages", map[string]any{"space": "E", "max_results": 5000, "max_chars": 1})
+	if res.IsError {
+		t.Fatal(resultText(res))
+	}
+	if len(out.Messages) != chatMaxResults {
+		t.Errorf("list messages returned %d, want cap %d", len(out.Messages), chatMaxResults)
+	}
+
+	served.Store(0)
+	sout, res := callTool[chatSearchMessagesOutput](t, cs, "chat_search_messages", map[string]any{
+		"text": "needle", "spaces": []string{"E"}, "max_scan": 1_000_000,
+	})
+	if res.IsError {
+		t.Fatal(resultText(res))
+	}
+	if sout.Scanned != chatMaxScan || !sout.CapReached || served.Load() > chatMaxScan+1000 {
+		t.Errorf("search scanned %d (served %d), want cap %d", sout.Scanned, served.Load(), chatMaxScan)
 	}
 }

@@ -44,17 +44,25 @@ func New(w io.Writer, f Format) *Printer {
 }
 
 // Print renders v. In JSON mode v is encoded as indented JSON and textFn is
-// ignored. In text mode textFn is called with the destination writer; when
-// textFn is nil, v is printed with fmt's %v verb.
+// ignored. In text mode textFn is called with a writer that sanitizes
+// everything written to the destination (see Sanitize), so untrusted
+// content cannot inject terminal escape sequences; when textFn is nil, v
+// is printed with fmt's %v verb through the same filter.
 func (p *Printer) Print(v any, textFn func(w io.Writer) error) error {
 	if p.Format == FormatJSON {
 		return WriteJSON(p.W, v)
 	}
+	sw := NewSanitizingWriter(p.W)
+	var err error
 	if textFn == nil {
-		_, err := fmt.Fprintln(p.W, v)
-		return err
+		_, err = fmt.Fprintln(sw, v)
+	} else {
+		err = textFn(sw)
 	}
-	return textFn(p.W)
+	if ferr := sw.Flush(); err == nil {
+		err = ferr
+	}
+	return err
 }
 
 // WriteJSON encodes v as indented JSON followed by a newline. HTML
@@ -76,7 +84,8 @@ func NewTabWriter(w io.Writer) *tabwriter.Writer {
 }
 
 // Table writes headers and rows as aligned columns. Tabs and newlines
-// inside cells are replaced by spaces so they cannot break the layout.
+// inside cells are replaced by spaces so they cannot break the layout, and
+// cells are sanitized (see Sanitize).
 // When headers is empty no header line is written.
 func Table(w io.Writer, headers []string, rows [][]string) error {
 	tw := NewTabWriter(w)
@@ -99,6 +108,7 @@ func Table(w io.Writer, headers []string, rows [][]string) error {
 
 // KeyValues writes "key: value" pairs aligned on the colon. pairs must have
 // an even length (key, value, key, value, ...); empty values are skipped.
+// Values are flattened to one line and sanitized like Table cells.
 func KeyValues(w io.Writer, pairs ...string) error {
 	tw := NewTabWriter(w)
 	for i := 0; i+1 < len(pairs); i += 2 {
@@ -114,7 +124,9 @@ func KeyValues(w io.Writer, pairs ...string) error {
 
 var cellReplacer = strings.NewReplacer("\t", " ", "\r\n", " ", "\n", " ", "\r", " ")
 
-func cleanCell(s string) string { return cellReplacer.Replace(s) }
+// cleanCell flattens s to one sanitized line. Sanitizing here too keeps
+// Table and KeyValues safe even on writers not wrapped by Printer.
+func cleanCell(s string) string { return Sanitize(cellReplacer.Replace(s)) }
 
 // Ellipsize shortens s to at most n runes, appending "…" when cut.
 // n <= 0 returns s unchanged.

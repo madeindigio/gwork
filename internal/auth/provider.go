@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"slices"
+	"time"
 
 	"golang.org/x/oauth2"
 	"google.golang.org/api/option"
@@ -15,6 +16,12 @@ import (
 
 // EnvAccount selects the account when --account is not given.
 const EnvAccount = "GWORK_ACCOUNT"
+
+// DefaultRefreshTimeout bounds a token refresh request when
+// ProviderOptions.HTTPClient is nil. Refreshes run outside the per-command
+// context (and under a lock shared by concurrent MCP calls), so they need
+// their own bound.
+const DefaultRefreshTimeout = 30 * time.Second
 
 // ClientProvider hands out google.golang.org/api client options for the
 // current account. It is the only thing CLI commands and MCP tools need to
@@ -46,7 +53,8 @@ type ProviderOptions struct {
 	Credentials *ClientCredentials
 	// Endpoint overrides Google's OAuth endpoints (tests).
 	Endpoint oauth2.Endpoint
-	// HTTPClient is used for token refreshes; nil uses http.DefaultClient.
+	// HTTPClient is used for token refreshes; nil uses a client with
+	// DefaultRefreshTimeout.
 	HTTPClient *http.Client
 	// UserAgent is sent to Google APIs when not empty.
 	UserAgent string
@@ -55,8 +63,7 @@ type ProviderOptions struct {
 // StoreProvider is the real ClientProvider, backed by a TokenStore.
 type StoreProvider struct {
 	account   string
-	stored    *StoredToken
-	ts        oauth2.TokenSource
+	ts        *persistingTokenSource
 	userAgent string
 }
 
@@ -84,29 +91,36 @@ func NewStoreProvider(ctx context.Context, opts ProviderOptions) (*StoreProvider
 		return nil, &Error{Kind: ErrNoCredentials, Message: "no OAuth client configured to refresh tokens", Hint: SetupDocHint}
 	}
 	cfg := OAuthConfig(opts.Credentials, opts.Endpoint, "", st.Scopes)
-	hc := opts.HTTPClient
-	if hc == nil {
-		hc = http.DefaultClient
-	}
 	// The refresh context must outlive the caller's (per-command) context.
-	refreshCtx := context.WithValue(context.WithoutCancel(ctx), oauth2.HTTPClient, hc)
-	base := cfg.TokenSource(refreshCtx, st.Token)
+	refreshCtx := context.WithValue(context.WithoutCancel(ctx), oauth2.HTTPClient, refreshClient(opts.HTTPClient))
+	newSource := func(t *oauth2.Token) oauth2.TokenSource { return cfg.TokenSource(refreshCtx, t) }
 	return &StoreProvider{
 		account:   st.Email,
-		stored:    st,
-		ts:        NewPersistingTokenSource(base, opts.Store, st),
+		ts:        newPersistingTokenSource(newSource, opts.Store, st),
 		userAgent: opts.UserAgent,
 	}, nil
+}
+
+// refreshClient returns hc, or a client bounded by DefaultRefreshTimeout.
+func refreshClient(hc *http.Client) *http.Client {
+	if hc != nil {
+		return hc
+	}
+	return &http.Client{Timeout: DefaultRefreshTimeout}
 }
 
 // Account implements ClientProvider.
 func (p *StoreProvider) Account() string { return p.account }
 
-// GrantedServices implements ClientProvider.
-func (p *StoreProvider) GrantedServices() []Service { return p.stored.Services() }
+// GrantedServices implements ClientProvider. It reflects the grant in use,
+// which changes when a newer login is picked up after a refresh.
+func (p *StoreProvider) GrantedServices() []Service {
+	cur := p.ts.Current()
+	return cur.Services()
+}
 
 // Scopes returns the granted scopes.
-func (p *StoreProvider) Scopes() []string { return slices.Clone(p.stored.Scopes) }
+func (p *StoreProvider) Scopes() []string { return slices.Clone(p.ts.Current().Scopes) }
 
 // TokenSource returns the persisting token source.
 func (p *StoreProvider) TokenSource() oauth2.TokenSource { return p.ts }
@@ -116,7 +130,7 @@ func (p *StoreProvider) ClientOptions(_ context.Context, svc Service) ([]option.
 	if !svc.Valid() {
 		return nil, fmt.Errorf("unknown service %q", svc)
 	}
-	if len(MissingScopes(p.stored.Scopes, svc)) > 0 {
+	if len(MissingScopes(p.ts.Current().Scopes, svc)) > 0 {
 		return nil, NewScopeError(p.account, svc)
 	}
 	opts := []option.ClientOption{option.WithTokenSource(p.ts)}

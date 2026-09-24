@@ -125,3 +125,109 @@ func TestResolveAccount(t *testing.T) {
 		t.Fatalf("got %v", err)
 	}
 }
+
+// newRefreshingProvider stores an expired token for a@digio.es and returns
+// a provider over it.
+func newRefreshingProvider(t *testing.T, f *fakeGoogleAuth, hc *http.Client) (*StoreProvider, *FallbackStore) {
+	t.Helper()
+	keyring.MockInit()
+	store := &FallbackStore{Keyring: KeyringStore{}, File: FileStore{Dir: t.TempDir()}}
+	st := expiredToken("a@digio.es", ScopeGmailReadonly)
+	st.Created = time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	if err := store.Save(st); err != nil {
+		t.Fatal(err)
+	}
+	p, err := NewStoreProvider(context.Background(), ProviderOptions{
+		Account: "a@digio.es", Store: store, Credentials: testCreds(), Endpoint: f.endpoint(), HTTPClient: hc,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return p, store
+}
+
+func TestRefreshAdoptsNewerLogin(t *testing.T) {
+	f := newFakeGoogleAuth(t)
+	p, store := newRefreshingProvider(t, f, nil)
+
+	// Meanwhile, "gwork auth login --services gmail,chat" stores a new grant.
+	newer := &StoredToken{
+		Token:  &oauth2.Token{AccessToken: "access-new", RefreshToken: "refresh-2", TokenType: "Bearer", Expiry: time.Now().Add(time.Hour)},
+		Scopes: ScopesFor([]Service{Gmail, Chat}),
+		Email:  "a@digio.es",
+	}
+	if err := store.Save(newer); err != nil {
+		t.Fatal(err)
+	}
+
+	tok, err := p.TokenSource().Token()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tok.AccessToken != "access-new" {
+		t.Fatalf("access token %q, want the newer grant's", tok.AccessToken)
+	}
+	saved, err := store.Load("a@digio.es")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved.Token.RefreshToken != "refresh-2" || saved.Token.AccessToken != "access-new" || len(saved.Scopes) != len(newer.Scopes) {
+		t.Fatalf("newer login was overwritten: %+v scopes %v", saved.Token, saved.Scopes)
+	}
+	if _, err := p.ClientOptions(context.Background(), Chat); err != nil {
+		t.Fatalf("adopted grant should include chat: %v", err)
+	}
+}
+
+func TestRefreshUpdatesOnlyAccessFields(t *testing.T) {
+	f := newFakeGoogleAuth(t)
+	f.refreshRotate = "refresh-rotated"
+	p, store := newRefreshingProvider(t, f, nil)
+
+	if _, err := p.TokenSource().Token(); err != nil {
+		t.Fatal(err)
+	}
+	saved, err := store.Load("a@digio.es")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved.Token.AccessToken != "access-refreshed" || saved.Token.RefreshToken != "refresh-rotated" {
+		t.Fatalf("saved token %+v", saved.Token)
+	}
+	if !saved.Created.Equal(time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)) || len(saved.Scopes) != 1 {
+		t.Fatalf("record metadata changed: created %v scopes %v", saved.Created, saved.Scopes)
+	}
+	if !saved.Token.Expiry.After(time.Now()) {
+		t.Fatalf("expiry not updated: %v", saved.Token.Expiry)
+	}
+}
+
+func TestRefreshAfterLogoutDoesNotResurrect(t *testing.T) {
+	f := newFakeGoogleAuth(t)
+	p, store := newRefreshingProvider(t, f, nil)
+	if err := store.Delete("a@digio.es"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.TokenSource().Token(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Load("a@digio.es"); !errors.Is(err, ErrTokenNotFound) {
+		t.Fatalf("token was written back after logout: %v", err)
+	}
+}
+
+func TestRefreshHTTPClientTimeout(t *testing.T) {
+	if c := refreshClient(nil); c.Timeout != DefaultRefreshTimeout {
+		t.Fatalf("default refresh timeout %v", c.Timeout)
+	}
+	f := newFakeGoogleAuth(t)
+	f.refreshDelay = 5 * time.Second
+	p, _ := newRefreshingProvider(t, f, &http.Client{Timeout: 50 * time.Millisecond})
+	start := time.Now()
+	if _, err := p.TokenSource().Token(); err == nil {
+		t.Fatal("expected a timeout error")
+	}
+	if d := time.Since(start); d > 2*time.Second {
+		t.Fatalf("refresh was not bounded by the client timeout: %v", d)
+	}
+}

@@ -16,7 +16,9 @@ cmd/gwork/main.go             entry point: os.Exit(cli.Execute())
 internal/buildinfo/           Version, Commit, Date, embedded OAuth client, HostedDomain (ldflags)
 internal/config/              config dir (GWORK_CONFIG_DIR | os.UserConfigDir()/gwork), config.json
 internal/output/              Printer (text|json), Table, KeyValues, WriteJSON, Ellipsize,
-                              DateTime, SameDay, Person, Bytes (text formatting helpers)
+                              DateTime, SameDay, Person, Bytes (text formatting helpers),
+                              Sanitize/SanitizingWriter (strip terminal control chars from
+                              untrusted text; Printer applies it in text mode)
 internal/fsutil/              CheckDest + WriteFile: atomic, no-clobber, 0600 file writes
                               (downloads; config.WriteFileAtomic uses it for config/tokens)
 internal/timeutil/            Parse / ParseBound / ParseWindow for --from/--to/--since/--until

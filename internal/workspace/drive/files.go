@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	driveapi "google.golang.org/api/drive/v3"
@@ -68,7 +69,9 @@ func Search(ctx context.Context, opts SearchOptions, clientOpts ...option.Client
 	}
 	limit = min(limit, MaxResultsLimit)
 	orderBy := opts.OrderBy
-	if orderBy == "" && opts.Text == "" {
+	// Drive rejects orderBy on full-text searches (they are ordered by
+	// relevance), whether fullText comes from Text or from RawQuery.
+	if orderBy == "" && !strings.Contains(q, "fullText") {
 		orderBy = "modifiedTime desc"
 	}
 

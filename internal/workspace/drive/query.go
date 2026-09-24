@@ -35,8 +35,8 @@ type SearchOptions struct {
 	// Max is the maximum number of results (default DefaultMaxResults).
 	Max int
 	// OrderBy is a Drive orderBy expression. When empty, results are sorted
-	// by "modifiedTime desc", except for full-text searches, which Drive
-	// only returns by relevance.
+	// by "modifiedTime desc", except for full-text searches (Text, or a
+	// RawQuery using fullText), which Drive only returns by relevance.
 	OrderBy string
 }
 

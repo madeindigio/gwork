@@ -156,6 +156,10 @@ since/until`): RFC 3339, `YYYY-MM-DD`, `today`, `tomorrow`, `yesterday`,
 `now`, or relative `+3d` (future) / `7d` or `-7d` (past) with units
 `m h d w`. Text output shows timestamps as `YYYY-MM-DD HH:MM` in the local
 time zone.
+Text output is sanitized (`output.Sanitize`, applied by the Printer): C0/C1
+control characters other than newline and tab, and bidi override/isolate
+characters, become U+FFFD so untrusted content cannot inject terminal escape
+sequences. JSON output is unchanged.
 
 Content rules:
 - Gmail body: prefer `text/plain`, fall back to HTML converted to text.
@@ -195,11 +199,11 @@ Content rules:
 | `drive_search` | `query_text`, `name`, `type`, `mime_type`, `owner`, `folder_id`, `modified_after`, `raw_query`, `max_results` |
 | `drive_get_file` | `file_id` |
 | `drive_read_file` | `file_id`, `max_chars` |
-| `chat_list_spaces` | `type`, `max_results` |
+| `chat_list_spaces` | `type`, `max_results` (max 1000) |
 | `chat_find_dm` | `email` |
-| `chat_list_messages` | `space`, `since`, `until`, `thread`, `order`, `max_results`, `max_chars` |
+| `chat_list_messages` | `space`, `since`, `until`, `thread`, `order`, `max_results` (max 1000), `max_chars` |
 | `chat_get_message` | `message_name`, `max_chars` |
-| `chat_search_messages` | `text`, `spaces`, `since`, `max_results`, `max_scan`, `max_chars` |
+| `chat_search_messages` | `text`, `spaces`, `since`, `max_results` (max 1000), `max_scan` (max 20000), `max_chars` |
 
 There is intentionally no download tool: MCP clients receive text, not
 files.
@@ -209,6 +213,8 @@ files.
 - Long text is truncated with an explicit `truncated: true` flag and a
   `max_chars` input parameter (default 20000; per text, or a shared budget
   for thread bodies).
+- Each tool call is bounded by 2m; `gwork mcp --timeout <d>` replaces it
+  and `--timeout 0` disables it (the CLI-wide 1m default does not apply).
 - Errors are classified like in the CLI and returned as tool errors
   (`isError: true`) with the hint.
 - Nothing is written to stdout except protocol messages; logs go to stderr.

@@ -33,6 +33,18 @@ type StoredToken struct {
 	Scopes  []string      `json:"scopes"`
 	Email   string        `json:"email"`
 	Created time.Time     `json:"created"`
+	// Saved is when this record was last written by FallbackStore.Save;
+	// it decides which copy wins when both backends hold one.
+	Saved time.Time `json:"saved,omitzero"`
+}
+
+// stamp returns the time the record was last written: Saved, or Created
+// for records written before Saved existed.
+func (s *StoredToken) stamp() time.Time {
+	if !s.Saved.IsZero() {
+		return s.Saved
+	}
+	return s.Created
 }
 
 // Services returns the services fully covered by the stored scopes.
@@ -185,32 +197,59 @@ func (s *FallbackStore) warn(err error) {
 	})
 }
 
-// Load implements TokenStore.
+// Load implements TokenStore. When both the keyring and the file hold a
+// record (e.g. a keyring write failed after an earlier successful one), the
+// most recently saved record wins.
 func (s *FallbackStore) Load(email string) (*StoredToken, error) {
+	t, _, err := s.load(email)
+	return t, err
+}
+
+// load returns the current record for email and the backend holding it.
+func (s *FallbackStore) load(email string) (*StoredToken, string, error) {
+	var kt *StoredToken
 	if !s.ForceFile {
 		t, err := s.Keyring.Load(email)
-		if err == nil {
-			return t, nil
-		}
-		if !errors.Is(err, ErrTokenNotFound) {
+		switch {
+		case err == nil:
+			kt = t
+		case !errors.Is(err, ErrTokenNotFound):
 			s.warn(err)
 		}
 	}
-	return s.File.Load(email)
+	ft, err := s.File.Load(email)
+	switch {
+	case kt == nil && err != nil:
+		return nil, "", err
+	case kt == nil:
+		return ft, "file", nil
+	case err == nil && ft.stamp().After(kt.stamp()):
+		return ft, "file", nil
+	}
+	return kt, "keyring", nil
 }
 
-// Save implements TokenStore.
-func (s *FallbackStore) Save(t *StoredToken) error {
+// Save implements TokenStore. It stores a copy of st stamped with the save
+// time (Saved). When the keyring write fails, it removes any older keyring
+// entry (best effort) so it cannot shadow the file copy, and writes the file.
+func (s *FallbackStore) Save(st *StoredToken) error {
+	t := *st
+	t.Saved = time.Now().UTC()
+	if !t.Saved.After(st.Saved) {
+		// Keep stamps strictly increasing even with a coarse clock.
+		t.Saved = st.Saved.Add(time.Nanosecond)
+	}
 	if !s.ForceFile {
-		err := s.Keyring.Save(t)
+		err := s.Keyring.Save(&t)
 		if err == nil {
 			// Drop a stale file copy from an earlier fallback, if any.
 			_ = s.File.Delete(t.Email)
 			return nil
 		}
 		s.warn(err)
+		_ = s.Keyring.Delete(t.Email)
 	}
-	return s.File.Save(t)
+	return s.File.Save(&t)
 }
 
 // Delete implements TokenStore. It removes the token from both backends and
@@ -244,13 +283,6 @@ func (s *FallbackStore) Delete(email string) error {
 // Backend reports where the token for email currently lives: "keyring",
 // "file" or "" when not stored.
 func (s *FallbackStore) Backend(email string) string {
-	if !s.ForceFile {
-		if _, err := s.Keyring.Load(email); err == nil {
-			return "keyring"
-		}
-	}
-	if _, err := s.File.Load(email); err == nil {
-		return "file"
-	}
-	return ""
+	_, backend, _ := s.load(email)
+	return backend
 }

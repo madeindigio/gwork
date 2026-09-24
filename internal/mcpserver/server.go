@@ -28,6 +28,9 @@ import (
 // DefaultToolTimeout bounds each tool call when Deps.Timeout is zero.
 const DefaultToolTimeout = 2 * time.Minute
 
+// NoToolTimeout, as Deps.Timeout, disables the per-call timeout.
+const NoToolTimeout time.Duration = -1
+
 // Deps are the dependencies shared by every tool handler.
 type Deps struct {
 	// Provider builds API client options for the current account. It is nil
@@ -37,7 +40,8 @@ type Deps struct {
 	ProviderErr error
 	// Logger writes to stderr. Nil discards logs.
 	Logger *slog.Logger
-	// Timeout bounds each tool call; zero means DefaultToolTimeout.
+	// Timeout bounds each tool call; zero means DefaultToolTimeout and a
+	// negative value (NoToolTimeout) disables the per-call timeout.
 	Timeout time.Duration
 	// Now returns the current time; nil means time.Now. Inject it in tests
 	// that resolve relative times.
@@ -68,9 +72,13 @@ func (d Deps) logger() *slog.Logger {
 	return slog.New(slog.DiscardHandler)
 }
 
+// timeout returns the per-call timeout; 0 means none.
 func (d Deps) timeout() time.Duration {
-	if d.Timeout > 0 {
+	switch {
+	case d.Timeout > 0:
 		return d.Timeout
+	case d.Timeout < 0:
+		return 0
 	}
 	return DefaultToolTimeout
 }

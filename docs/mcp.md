@@ -142,7 +142,7 @@ works: `npx @modelcontextprotocol/inspector gwork mcp`.
 |---|---|---|
 | `--services` | `all` | Tool groups to register: `gmail`, `calendar`, `drive`, `chat` (comma separated) or `all`. Groups the account has not granted are skipped. |
 | `--account` | `$GWORK_ACCOUNT`, then the default account | Google account whose token is used. |
-| `--timeout` | `1m` | Bound for each tool call (`0` falls back to 2m). |
+| `--timeout` | `2m` | Bound for each tool call. The CLI-wide `1m` default does not apply to `gwork mcp`: without `--timeout` each call gets 2m; an explicit value replaces it and `--timeout 0` disables the per-call timeout. |
 | `--log-level` | `info` | stderr log level: `debug`, `info`, `warn`, `error`. |
 | `--credentials` | see README | OAuth client, only needed if the build has no embedded client. |
 
@@ -196,11 +196,11 @@ for those.
 
 | Tool | Inputs | Output |
 |---|---|---|
-| `chat_list_spaces` | `type` (`space`, `group`, `dm`), `max_results` (default 100) | `spaces[]`: `name` (`spaces/...`), `display_name`, `type`, `last_active_time`, `member_count` |
+| `chat_list_spaces` | `type` (`space`, `group`, `dm`), `max_results` (default 100, max 1000) | `spaces[]`: `name` (`spaces/...`), `display_name`, `type`, `last_active_time`, `member_count` |
 | `chat_find_dm` | `email` (required) | `space`: the direct message space with that person (error if no DM exists yet) |
-| `chat_list_messages` | `space` (required, `spaces/XXX` or `XXX`), `since`, `until`, `thread`, `order` (`asc` or `desc`, default `desc`), `max_results` (default 50), `max_chars` (per message) | `messages[]`: `name`, `space`, `thread`, `sender` (`name` = `users/{id}`, `display_name` when known), `text`, `create_time`, attachments; `truncated` |
+| `chat_list_messages` | `space` (required, `spaces/XXX` or `XXX`), `since`, `until`, `thread`, `order` (`asc` or `desc`, default `desc`), `max_results` (default 50, max 1000), `max_chars` (per message) | `messages[]`: `name`, `space`, `thread`, `sender` (`name` = `users/{id}`, `display_name` when known), `text`, `create_time`, attachments; `truncated` |
 | `chat_get_message` | `message_name` (required, `spaces/S/messages/M`), `max_chars` | `message`; `truncated` |
-| `chat_search_messages` | `text` (required, all words, case-insensitive), `spaces[]` (default all), `since` (default `7d`), `max_results` (default 50), `max_scan` (default 2000), `max_chars` | `matches[]` newest first, `total_matches`, `scanned`, `spaces_scanned`, `spaces_total`, `cap_reached`, `truncated` |
+| `chat_search_messages` | `text` (required, all words, case-insensitive), `spaces[]` (default all), `since` (default `7d`), `max_results` (default 50, max 1000), `max_scan` (default 2000, max 20000), `max_chars` | `matches[]` newest first, `total_matches`, `scanned`, `spaces_scanned`, `spaces_total`, `cap_reached`, `truncated` |
 
 ## Tips for prompts and agents
 

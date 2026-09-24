@@ -24,7 +24,7 @@ type ToolFunc[In, Out any] func(ctx context.Context, in In) (Out, error)
 // In and Out are structs: their JSON schemas are inferred by the SDK
 // (property descriptions come from `jsonschema:"..."` struct tags; use
 // snake_case json tags and `omitempty` for optional inputs). Each call
-// runs with Deps' timeout; errors are classified with svc (so hints such
+// runs with Deps' timeout (if any); errors are classified with svc (so hints such
 // as "run: gwork auth login --services chat" reach the model) and returned
 // as tool errors (isError=true), never as protocol errors.
 //
@@ -41,8 +41,11 @@ func addReadOnlyTool[In, Out any](s *mcp.Server, deps Deps, svc auth.Service, to
 	log := deps.logger()
 
 	mcp.AddTool(s, &t, func(ctx context.Context, _ *mcp.CallToolRequest, in In) (*mcp.CallToolResult, Out, error) {
-		ctx, cancel := context.WithTimeout(ctx, deps.timeout())
-		defer cancel()
+		if d := deps.timeout(); d > 0 {
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithTimeout(ctx, d)
+			defer cancel()
+		}
 		start := time.Now()
 		out, err := fn(ctx, in)
 		if err != nil {

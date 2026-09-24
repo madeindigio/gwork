@@ -74,6 +74,13 @@ func TestClassifyAPI(t *testing.T) {
 			err:  &googleapi.Error{Code: 403, Errors: []googleapi.ErrorItem{{Reason: "accessNotConfigured"}}},
 			kind: ErrAPIDisabled,
 		},
+		{
+			name:   "chat app not configured",
+			err:    &googleapi.Error{Code: 404, Message: "Google Chat app not found. To create a Chat app, you must turn on the Chat API and configure the app in the Google Cloud console."},
+			kind:   ErrAPIDisabled,
+			hint:   "setup-google-cloud.md, section 5",
+			prefix: "the Google Chat API is not configured for the OAuth client's project",
+		},
 		{name: "not found", err: &googleapi.Error{Code: 404, Message: "Requested entity was not found."}, kind: ErrNotFound, prefix: "not found"},
 		{name: "rate limit", err: &googleapi.Error{Code: 429, Message: "Too many requests"}, kind: ErrRateLimited, prefix: "Google API rate limit exceeded"},
 		{name: "unauthorized", err: &googleapi.Error{Code: 401, Message: "Invalid Credentials"}, kind: ErrReauthRequired, prefix: "Google rejected the credentials"},

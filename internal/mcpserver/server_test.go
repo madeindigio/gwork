@@ -121,3 +121,58 @@ func TestAddReadOnlyTool(t *testing.T) {
 		t.Fatal("expected validation error")
 	}
 }
+
+type deadlineInput struct{}
+
+type deadlineOutput struct {
+	HasDeadline bool          `json:"has_deadline"`
+	Remaining   time.Duration `json:"remaining"`
+}
+
+func TestToolTimeout(t *testing.T) {
+	cases := []struct {
+		name    string
+		timeout time.Duration
+		want    bool
+		atMost  time.Duration
+	}{
+		{"zero uses default", 0, true, DefaultToolTimeout},
+		{"explicit", 5 * time.Second, true, 5 * time.Second},
+		{"negative disables", NoToolTimeout, false, 0},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			deps := testDeps(t, http.NotFoundHandler())
+			deps.Timeout = c.timeout
+			srv := New(deps, nil)
+			addReadOnlyTool(srv.MCP, deps, "", &mcp.Tool{Name: "deadline"}, func(ctx context.Context, _ deadlineInput) (deadlineOutput, error) {
+				d, ok := ctx.Deadline()
+				if !ok {
+					return deadlineOutput{}, nil
+				}
+				return deadlineOutput{HasDeadline: true, Remaining: time.Until(d)}, nil
+			})
+			serverT, clientT := mcp.NewInMemoryTransports()
+			ss, err := srv.MCP.Connect(context.Background(), serverT, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = ss.Close() })
+			cs, err := mcp.NewClient(&mcp.Implementation{Name: "c", Version: "v0"}, nil).Connect(context.Background(), clientT, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = cs.Close() })
+			out, res := callTool[deadlineOutput](t, cs, "deadline", map[string]any{})
+			if res.IsError {
+				t.Fatal(resultText(res))
+			}
+			if out.HasDeadline != c.want {
+				t.Fatalf("has deadline = %v, want %v", out.HasDeadline, c.want)
+			}
+			if c.want && (out.Remaining > c.atMost || out.Remaining < c.atMost-time.Minute/2) {
+				t.Errorf("remaining = %v, want about %v", out.Remaining, c.atMost)
+			}
+		})
+	}
+}

@@ -146,14 +146,77 @@ func TestSearchEmptyAndDefaults(t *testing.T) {
 func TestSearchMetadataError(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /gmail/v1/users/me/messages", func(w http.ResponseWriter, r *http.Request) {
-		testutil.WriteJSON(t, w, map[string]any{"messages": []any{map[string]any{"id": "gone"}}})
+		testutil.WriteJSON(t, w, map[string]any{"messages": []any{map[string]any{"id": "bad"}}})
 	})
 	mux.HandleFunc("GET /gmail/v1/users/me/messages/{id}", func(w http.ResponseWriter, r *http.Request) {
-		testutil.WriteGoogleError(w, 404, "notFound", "Requested entity was not found.")
+		testutil.WriteGoogleError(w, 403, "forbidden", "Forbidden.")
 	})
 	_, err := Search(context.Background(), "x", SearchOptions{}, testutil.FakeGoogle(t, mux)...)
-	if err == nil || !strings.Contains(err.Error(), "get message gone metadata") {
+	if err == nil || !strings.Contains(err.Error(), "get message bad metadata") {
 		t.Errorf("err = %v", err)
+	}
+}
+
+func fastRetries(t *testing.T) {
+	t.Helper()
+	old := retryBaseDelay
+	retryBaseDelay = time.Millisecond
+	t.Cleanup(func() { retryBaseDelay = old })
+}
+
+func TestSearchSkipsVanishedAndRetriesTransient(t *testing.T) {
+	fastRetries(t)
+	var flaky atomic.Int32
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /gmail/v1/users/me/messages", func(w http.ResponseWriter, r *http.Request) {
+		testutil.WriteJSON(t, w, map[string]any{"messages": []any{
+			map[string]any{"id": "m1"}, map[string]any{"id": "gone"}, map[string]any{"id": "flaky"},
+		}})
+	})
+	mux.HandleFunc("GET /gmail/v1/users/me/messages/{id}", func(w http.ResponseWriter, r *http.Request) {
+		id := r.PathValue("id")
+		switch {
+		case id == "gone":
+			testutil.WriteGoogleError(w, 404, "notFound", "Requested entity was not found.")
+			return
+		case id == "flaky" && flaky.Add(1) == 1:
+			testutil.WriteGoogleError(w, 429, "rateLimitExceeded", "Too many requests.")
+			return
+		case id == "flaky" && flaky.Load() == 2:
+			testutil.WriteGoogleError(w, 503, "backendError", "Backend error.")
+			return
+		}
+		testutil.WriteJSON(t, w, fakeMessage(id, map[string]any{"headers": headers("Subject", "S "+id)}))
+	})
+	got, err := Search(context.Background(), "x", SearchOptions{}, testutil.FakeGoogle(t, mux)...)
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(got) != 2 || got[0].ID != "m1" || got[1].ID != "flaky" {
+		t.Fatalf("got %+v, want m1 and flaky", got)
+	}
+	if n := flaky.Load(); n != 3 {
+		t.Errorf("flaky attempts = %d, want 3", n)
+	}
+}
+
+func TestSearchGivesUpAfterRetries(t *testing.T) {
+	fastRetries(t)
+	var calls atomic.Int32
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /gmail/v1/users/me/messages", func(w http.ResponseWriter, r *http.Request) {
+		testutil.WriteJSON(t, w, map[string]any{"messages": []any{map[string]any{"id": "busy"}}})
+	})
+	mux.HandleFunc("GET /gmail/v1/users/me/messages/{id}", func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		testutil.WriteGoogleError(w, 500, "backendError", "Backend error.")
+	})
+	_, err := Search(context.Background(), "x", SearchOptions{}, testutil.FakeGoogle(t, mux)...)
+	if err == nil || !strings.Contains(err.Error(), "get message busy metadata") {
+		t.Errorf("err = %v", err)
+	}
+	if n := calls.Load(); n != metadataAttempts {
+		t.Errorf("attempts = %d, want %d", n, metadataAttempts)
 	}
 }
 

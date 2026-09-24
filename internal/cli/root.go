@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/digio/gwork-cli/internal/auth"
+	"github.com/digio/gwork-cli/internal/output"
 )
 
 // Command annotations understood by the root command.
@@ -50,7 +51,8 @@ func (a *App) Run(ctx context.Context, args []string) int {
 		a.cancel = nil
 	}
 	if err != nil {
-		fmt.Fprintln(a.Err, "error:", a.explain(cmd, err))
+		// Error messages can quote Google responses and user data.
+		fmt.Fprintln(a.Err, "error:", output.Sanitize(a.explain(cmd, err).Error()))
 		return 1
 	}
 	return 0

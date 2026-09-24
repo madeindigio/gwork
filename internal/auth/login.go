@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/oauth2"
@@ -82,7 +83,8 @@ type callbackResult struct {
 
 // Login runs the OAuth loopback flow with PKCE (S256): it listens on
 // 127.0.0.1, opens the browser on the consent page, waits for the redirect,
-// validates state, exchanges the code and discovers the account email.
+// validates state (callbacks with a wrong or missing state are answered
+// with 400 and ignored), exchanges the code and discovers the account email.
 // The caller is responsible for persisting the returned token.
 func Login(ctx context.Context, opts LoginOptions) (*StoredToken, error) {
 	if opts.Credentials == nil {
@@ -139,14 +141,18 @@ func Login(ctx context.Context, opts LoginOptions) (*StoredToken, error) {
 	results := make(chan callbackResult, 1)
 	var once sync.Once
 	deliver := func(r callbackResult) { once.Do(func() { results <- r }) }
+	var rejected atomic.Int32
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/callback", func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
 		switch {
 		case q.Get("state") != state:
+			// A request without our state (stale tab, another local process,
+			// CSRF attempt) must not end the login: reject it and keep
+			// waiting for Google's redirect until the timeout.
+			rejected.Add(1)
 			writeCallbackPage(w, http.StatusBadRequest, "Login failed: invalid state parameter.")
-			deliver(callbackResult{err: errors.New("OAuth callback state mismatch (possible CSRF); try again")})
 		case q.Get("error") != "":
 			code, desc := q.Get("error"), q.Get("error_description")
 			writeCallbackPage(w, http.StatusForbidden, "Login failed: "+code+". You can close this window.")
@@ -183,6 +189,9 @@ func Login(ctx context.Context, opts LoginOptions) (*StoredToken, error) {
 	case <-ctx.Done():
 		return nil, fmt.Errorf("login cancelled: %w", ctx.Err())
 	case <-timer.C:
+		if n := rejected.Load(); n > 0 {
+			return nil, fmt.Errorf("login timed out after %s waiting for the browser callback (%d callback(s) with an invalid state parameter were rejected)", opts.Timeout, n)
+		}
 		return nil, fmt.Errorf("login timed out after %s waiting for the browser callback", opts.Timeout)
 	case res = <-results:
 	}

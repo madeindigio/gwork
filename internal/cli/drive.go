@@ -148,7 +148,7 @@ func newDriveReadCmd(app *App) *cobra.Command {
 			}
 			return app.Print(c, func(w io.Writer) error {
 				for _, n := range c.Notes {
-					fmt.Fprintln(app.Err, "note:", n)
+					fmt.Fprintln(app.Err, "note:", output.Sanitize(n))
 				}
 				if c.Truncated {
 					fmt.Fprintf(app.Err, "warning: content truncated to %d bytes (raise --max-bytes)\n", c.MaxBytes)

@@ -182,6 +182,9 @@ Every command has `--help` with all flags and examples.
 Text output is meant for people (tables and readable messages). Use `--json`
 (or `--output json`) for scripts: results go to stdout as JSON with snake_case
 fields; warnings and errors go to stderr, and the exit code is `1` on error.
+Text output replaces terminal control characters found in mail, Chat and
+Drive content (escape sequences, bidi overrides) with `�`, so a message
+cannot drive your terminal; `--json` keeps the exact data.
 
 ```sh
 gwork gmail search 'is:unread' --json | jq -r '.[] | "\(.date)  \(.from)  \(.subject)"'

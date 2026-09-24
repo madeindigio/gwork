@@ -2,13 +2,16 @@ package gmail
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
 	"net/mail"
 	"strings"
 	"time"
 
 	"golang.org/x/sync/errgroup"
 	gmailapi "google.golang.org/api/gmail/v1"
+	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
 )
 
@@ -37,7 +40,9 @@ type SearchOptions struct {
 // Search lists the messages matching query (Gmail search syntax, e.g.
 // "from:alice subject:report after:2026/09/01 has:attachment is:unread")
 // and fetches their metadata. Results keep the order returned by Gmail
-// (newest first).
+// (newest first). Messages deleted between the listing and the metadata
+// request are skipped; rate-limit and server errors on a metadata request
+// are retried a few times before Search fails.
 func Search(ctx context.Context, query string, so SearchOptions, opts ...option.ClientOption) ([]MessageSummary, error) {
 	svc, err := New(ctx, opts...)
 	if err != nil {
@@ -77,27 +82,79 @@ func search(ctx context.Context, svc *gmailapi.Service, query string, so SearchO
 		refs = refs[:limit]
 	}
 
-	out := make([]MessageSummary, len(refs))
+	found := make([]*MessageSummary, len(refs))
 	g, gctx := errgroup.WithContext(ctx)
 	g.SetLimit(metadataConcurrency)
 	for i, ref := range refs {
 		g.Go(func() error {
-			m, err := svc.Users.Messages.Get(userID, ref.Id).
-				Format("metadata").
-				MetadataHeaders(summaryHeaders...).
-				Context(gctx).
-				Do()
+			m, err := getMetadata(gctx, svc, ref.Id)
+			if isStatus(err, http.StatusNotFound) {
+				// The message was deleted between list and get: skip it.
+				return nil
+			}
 			if err != nil {
 				return fmt.Errorf("get message %s metadata: %w", ref.Id, err)
 			}
-			out[i] = toSummary(m)
+			s := toSummary(m)
+			found[i] = &s
 			return nil
 		})
 	}
 	if err := g.Wait(); err != nil {
 		return nil, err
 	}
+	out := make([]MessageSummary, 0, len(found))
+	for _, s := range found {
+		if s != nil {
+			out = append(out, *s)
+		}
+	}
 	return out, nil
+}
+
+// metadataAttempts is how many times a metadata request is tried when
+// Google answers 429 or 5xx.
+const metadataAttempts = 3
+
+// retryBaseDelay is the first backoff delay; it doubles on each retry.
+// Tests lower it.
+var retryBaseDelay = 250 * time.Millisecond
+
+// getMetadata fetches the summary headers of message id, retrying
+// transient failures (429 and 5xx) with exponential backoff.
+func getMetadata(ctx context.Context, svc *gmailapi.Service, id string) (*gmailapi.Message, error) {
+	delay := retryBaseDelay
+	for attempt := 1; ; attempt++ {
+		m, err := svc.Users.Messages.Get(userID, id).
+			Format("metadata").
+			MetadataHeaders(summaryHeaders...).
+			Context(ctx).
+			Do()
+		if err == nil || attempt == metadataAttempts || !isTransient(err) {
+			return m, err
+		}
+		t := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			t.Stop()
+			return nil, err
+		case <-t.C:
+		}
+		delay *= 2
+	}
+}
+
+// isStatus reports whether err is a Google API error with HTTP status code.
+func isStatus(err error, code int) bool {
+	var ge *googleapi.Error
+	return errors.As(err, &ge) && ge.Code == code
+}
+
+// isTransient reports whether err is a rate limit or server error worth
+// retrying.
+func isTransient(err error) bool {
+	var ge *googleapi.Error
+	return errors.As(err, &ge) && (ge.Code == http.StatusTooManyRequests || ge.Code >= 500)
 }
 
 // toSummary converts an API message fetched with format=metadata or full.

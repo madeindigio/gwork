@@ -15,6 +15,11 @@ import (
 // SetupDocHint points at the Google Cloud setup guide.
 const SetupDocHint = "see docs/setup-google-cloud.md"
 
+// ChatSetupDocHint points at the Chat app configuration section of the
+// Google Cloud setup guide.
+const ChatSetupDocHint = "configure the Chat app (Chat API > Configuration: app name, avatar URL, description); " +
+	"see docs/setup-google-cloud.md, section 5 (Google Chat API \"Configuration\" page)"
+
 // Sentinel error kinds. Use errors.Is to test for them; the concrete error
 // is an *Error carrying a message and an actionable hint.
 var (
@@ -233,6 +238,10 @@ func classifyAPI(err error, ctx string, ge *googleapi.Error, svc Service) error 
 	case has("accessNotConfigured", "SERVICE_DISABLED", "API_DISABLED") ||
 		strings.Contains(ge.Body, "SERVICE_DISABLED") || strings.Contains(msg, "has not been used in project"):
 		return &Error{Kind: ErrAPIDisabled, Message: withContext("the API is not enabled for the OAuth client's project", ctx, msg), Hint: SetupDocHint, Err: err}
+	case ge.Code == http.StatusNotFound && strings.Contains(strings.ToLower(msg), "chat app not found"):
+		// Chat answers 404 "Google Chat app not found..." when the Chat API
+		// has no app configuration in the OAuth client's project.
+		return &Error{Kind: ErrAPIDisabled, Message: withContext("the Google Chat API is not configured for the OAuth client's project", ctx, msg), Hint: ChatSetupDocHint, Err: err}
 	case ge.Code == http.StatusTooManyRequests || has("rateLimitExceeded", "userRateLimitExceeded", "RATE_LIMIT_EXCEEDED", "quotaExceeded"):
 		return &Error{Kind: ErrRateLimited, Message: withContext("Google API rate limit exceeded", ctx, msg), Hint: "wait a moment and retry, or reduce --max", Err: err}
 	case ge.Code == http.StatusNotFound:

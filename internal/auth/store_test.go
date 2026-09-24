@@ -139,3 +139,109 @@ func TestNewTokenStoreForceFile(t *testing.T) {
 		t.Fatal("keyring must not be used when forced to file")
 	}
 }
+
+// flakyKeyring is a TokenStore whose Save (and optionally Delete) fails,
+// holding whatever record it had before.
+type flakyKeyring struct {
+	rec        *StoredToken
+	deleteErr  error
+	deleteCall int
+}
+
+func (k *flakyKeyring) Load(string) (*StoredToken, error) {
+	if k.rec == nil {
+		return nil, ErrTokenNotFound
+	}
+	c := *k.rec
+	return &c, nil
+}
+
+func (k *flakyKeyring) Save(*StoredToken) error { return errors.New("keyring locked") }
+
+func (k *flakyKeyring) Delete(string) error {
+	k.deleteCall++
+	if k.deleteErr != nil {
+		return k.deleteErr
+	}
+	if k.rec == nil {
+		return ErrTokenNotFound
+	}
+	k.rec = nil
+	return nil
+}
+
+func TestFallbackStoreSaveFailureDropsStaleKeyringEntry(t *testing.T) {
+	old := sampleToken("a@digio.es")
+	old.Token.RefreshToken = "rt-old"
+	kr := &flakyKeyring{rec: old}
+	s := &FallbackStore{Keyring: kr, File: FileStore{Dir: t.TempDir()}}
+
+	fresh := sampleToken("a@digio.es")
+	fresh.Token.RefreshToken = "rt-new"
+	if err := s.Save(fresh); err != nil {
+		t.Fatal(err)
+	}
+	if kr.deleteCall != 1 || kr.rec != nil {
+		t.Fatalf("stale keyring entry not deleted (calls %d)", kr.deleteCall)
+	}
+	got, err := s.Load("a@digio.es")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Token.RefreshToken != "rt-new" || got.Saved.IsZero() {
+		t.Fatalf("loaded %+v, want the file copy with a save stamp", got)
+	}
+	if s.Backend("a@digio.es") != "file" {
+		t.Fatalf("backend %q", s.Backend("a@digio.es"))
+	}
+}
+
+func TestFallbackStoreLoadPrefersNewerRecord(t *testing.T) {
+	now := time.Now().UTC()
+	old := sampleToken("a@digio.es")
+	old.Token.RefreshToken = "rt-old"
+	old.Saved = now.Add(-time.Hour)
+	// The keyring cannot delete its entry either, so both copies remain.
+	kr := &flakyKeyring{rec: old, deleteErr: errors.New("keyring locked")}
+	s := &FallbackStore{Keyring: kr, File: FileStore{Dir: t.TempDir()}}
+
+	fresh := sampleToken("a@digio.es")
+	fresh.Token.RefreshToken = "rt-new"
+	if err := s.Save(fresh); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.Load("a@digio.es")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Token.RefreshToken != "rt-new" {
+		t.Fatalf("loaded %q, want the newer file record", got.Token.RefreshToken)
+	}
+
+	// A keyring record newer than the file wins.
+	kr.rec.Saved = now.Add(time.Hour)
+	if got, _ := s.Load("a@digio.es"); got.Token.RefreshToken != "rt-old" {
+		t.Fatalf("loaded %q, want the newer keyring record", got.Token.RefreshToken)
+	}
+	if s.Backend("a@digio.es") != "keyring" {
+		t.Fatalf("backend %q", s.Backend("a@digio.es"))
+	}
+}
+
+func TestFallbackStoreKeyringErrorDeletesEntry(t *testing.T) {
+	keyring.MockInit()
+	if err := (KeyringStore{}).Save(sampleToken("a@digio.es")); err != nil {
+		t.Fatal(err)
+	}
+	// With the mock failing every call, Save must still succeed via the
+	// file and must have attempted to remove the keyring entry.
+	keyring.MockInitWithError(errors.New("no dbus"))
+	t.Cleanup(keyring.MockInit)
+	s := &FallbackStore{Keyring: KeyringStore{}, File: FileStore{Dir: t.TempDir()}}
+	if err := s.Save(sampleToken("a@digio.es")); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := s.Load("a@digio.es"); err != nil || got.Saved.IsZero() {
+		t.Fatalf("load: %+v, %v", got, err)
+	}
+}

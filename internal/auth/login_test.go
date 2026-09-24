@@ -33,6 +33,10 @@ type fakeGoogleAuth struct {
 	scope         string
 	refreshStatus int
 	refreshBody   string
+	// refreshRotate, when set, is returned as a new refresh token.
+	refreshRotate string
+	// refreshDelay delays refresh responses.
+	refreshDelay time.Duration
 }
 
 func newFakeGoogleAuth(t *testing.T) *fakeGoogleAuth {
@@ -87,16 +91,27 @@ func (f *fakeGoogleAuth) token(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(resp)
 	case "refresh_token":
 		f.refreshCount++
+		if f.refreshDelay > 0 {
+			select {
+			case <-time.After(f.refreshDelay):
+			case <-r.Context().Done():
+				return
+			}
+		}
 		if f.refreshStatus != 0 {
 			w.WriteHeader(f.refreshStatus)
 			_, _ = io.WriteString(w, f.refreshBody)
 			return
 		}
-		_ = json.NewEncoder(w).Encode(map[string]any{
+		resp := map[string]any{
 			"access_token": "access-refreshed",
 			"token_type":   "Bearer",
 			"expires_in":   3600,
-		})
+		}
+		if f.refreshRotate != "" {
+			resp["refresh_token"] = f.refreshRotate
+		}
+		_ = json.NewEncoder(w).Encode(resp)
 	default:
 		http.Error(w, "unsupported grant", http.StatusBadRequest)
 	}
@@ -202,16 +217,71 @@ func TestLoginEmailFromIDToken(t *testing.T) {
 	}
 }
 
-func TestLoginStateMismatch(t *testing.T) {
+// getStatus performs a GET and returns the status code.
+func getStatus(t *testing.T, u string) int {
+	t.Helper()
+	resp, err := http.Get(u)
+	if err != nil {
+		t.Errorf("callback request: %v", err)
+		return 0
+	}
+	_ = resp.Body.Close()
+	return resp.StatusCode
+}
+
+func TestLoginStateMismatchKeepsWaiting(t *testing.T) {
+	f := newFakeGoogleAuth(t)
+	statuses := make(chan []int, 1)
+	st, err := Login(context.Background(), LoginOptions{
+		Credentials: testCreds(),
+		Endpoint:    f.endpoint(),
+		UserinfoURL: f.srv.URL + "/userinfo",
+		OpenBrowser: func(authURL string) error {
+			u, err := url.Parse(authURL)
+			if err != nil {
+				return err
+			}
+			q := u.Query()
+			redirect := q.Get("redirect_uri")
+			go func() {
+				var got []int
+				for _, cb := range []url.Values{
+					{"state": {"forged"}, "code": {"evil-code"}},
+					{"code": {"evil-code"}},
+					{"state": {"forged"}, "error": {"access_denied"}},
+				} {
+					got = append(got, getStatus(t, redirect+"?"+cb.Encode()))
+				}
+				statuses <- got
+				getStatus(t, redirect+"?"+url.Values{"state": {q.Get("state")}, "code": {"the-code"}}.Encode())
+			}()
+			return nil
+		},
+		Timeout: 10 * time.Second,
+	})
+	if err != nil {
+		t.Fatalf("login must survive invalid callbacks: %v", err)
+	}
+	for _, code := range <-statuses {
+		if code != http.StatusBadRequest {
+			t.Errorf("invalid callback status = %d, want 400", code)
+		}
+	}
+	if f.gotCode != "the-code" || st.Email != "alice@digio.es" {
+		t.Fatalf("exchanged code %q, email %q", f.gotCode, st.Email)
+	}
+}
+
+func TestLoginStateMismatchTimesOut(t *testing.T) {
 	f := newFakeGoogleAuth(t)
 	_, err := Login(context.Background(), LoginOptions{
 		Credentials: testCreds(),
 		Endpoint:    f.endpoint(),
 		OpenBrowser: simulateBrowser(t, func(q url.Values) { q.Set("state", "forged") }),
-		Timeout:     10 * time.Second,
+		Timeout:     time.Second,
 	})
-	if err == nil || !strings.Contains(err.Error(), "state") {
-		t.Fatalf("expected state error, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "timed out") || !strings.Contains(err.Error(), "invalid state") {
+		t.Fatalf("expected timeout mentioning the rejected state, got %v", err)
 	}
 	if f.gotCode != "" {
 		t.Fatal("code must not be exchanged on state mismatch")
