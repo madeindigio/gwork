@@ -150,7 +150,7 @@ func Login(ctx context.Context, opts LoginOptions) (*StoredToken, error) {
 		case q.Get("error") != "":
 			code, desc := q.Get("error"), q.Get("error_description")
 			writeCallbackPage(w, http.StatusForbidden, "Login failed: "+code+". You can close this window.")
-			deliver(callbackResult{err: classifyOAuth(fmt.Errorf("authorization failed: %s", code), code, desc)})
+			deliver(callbackResult{err: classifyOAuth(fmt.Errorf("authorization failed: %s", code), "", code, desc)})
 		case q.Get("code") == "":
 			writeCallbackPage(w, http.StatusBadRequest, "Login failed: missing authorization code.")
 			deliver(callbackResult{err: errors.New("OAuth callback without authorization code")})

@@ -139,7 +139,7 @@ const (
 func writeCalendarEventsText(w io.Writer, events []calendar.EventSummary, win timeutil.Window, loc *time.Location) error {
 	if len(events) == 0 {
 		_, err := fmt.Fprintf(w, "No events between %s and %s.\n",
-			win.From.In(loc).Format("2006-01-02 15:04"), win.To.In(loc).Format("2006-01-02 15:04"))
+			output.DateTime(win.From, loc), output.DateTime(win.To, loc))
 		return err
 	}
 	var day string
@@ -199,7 +199,7 @@ func calEventSlot(e calendar.EventSummary, loc *time.Location) (day, when string
 	if err != nil {
 		return day, when
 	}
-	if calSameDay(start, end) {
+	if output.SameDay(start, end) {
 		return day, when + "-" + end.Format(calTimeLayout)
 	}
 	return day, when + "-" + end.Format("Mon 02 Jan "+calTimeLayout)
@@ -223,18 +223,12 @@ func calEventWhen(start, end string, loc *time.Location) string {
 	if err != nil {
 		return out
 	}
-	if calSameDay(s, e) {
+	if output.SameDay(s, e) {
 		out += " - " + e.Format(calTimeLayout)
 	} else {
 		out += " - " + e.Format(calDayLayout+" "+calTimeLayout)
 	}
 	return out + " " + s.Format("MST")
-}
-
-func calSameDay(a, b time.Time) bool {
-	ay, am, ad := a.Date()
-	by, bm, bd := b.Date()
-	return ay == by && am == bm && ad == bd
 }
 
 // writeCalendarEventText renders the detail view of an event.
@@ -253,8 +247,8 @@ func writeCalendarEventText(w io.Writer, ev *calendar.Event, loc *time.Location)
 		"Event time zone", ev.TimeZone,
 		"Location", ev.Location,
 		"Status", ev.Status,
-		"Organizer", calPerson(ev.Organizer.DisplayName, ev.Organizer.Email),
-		"Creator", calPerson(ev.Creator.DisplayName, ev.Creator.Email),
+		"Organizer", output.Person(ev.Organizer.DisplayName, ev.Organizer.Email),
+		"Creator", output.Person(ev.Creator.DisplayName, ev.Creator.Email),
 		"Meet", ev.MeetLink,
 		"Recurrence", recurrence,
 		"Recurring event", ev.RecurringEventID,
@@ -282,7 +276,7 @@ func writeCalendarEventText(w io.Writer, ev *calendar.Event, loc *time.Location)
 			if a.Self {
 				tags = append(tags, "you")
 			}
-			line := "  - " + calPerson(a.DisplayName, a.Email)
+			line := "  - " + output.Person(a.DisplayName, a.Email)
 			if len(tags) > 0 {
 				line += " (" + strings.Join(tags, ", ") + ")"
 			}
@@ -307,16 +301,4 @@ func writeCalendarEventText(w io.Writer, ev *calendar.Event, loc *time.Location)
 		}
 	}
 	return nil
-}
-
-// calPerson renders "Name <email>", or whichever part is present.
-func calPerson(name, email string) string {
-	switch {
-	case name != "" && email != "":
-		return name + " <" + email + ">"
-	case name != "":
-		return name
-	default:
-		return email
-	}
 }

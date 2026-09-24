@@ -157,7 +157,7 @@ func TestDriveGet(t *testing.T) {
 func TestDriveGetNotFound(t *testing.T) {
 	p := testutil.NewFakeProvider(t, driveTestMux(t, nil))
 	_, stderr, code := runCLI(t, p, "drive", "get", "nope")
-	if code != 1 || !strings.Contains(stderr, "not found") || !strings.Contains(stderr, "hint:") {
+	if code != 1 || !strings.Contains(stderr, "not found: get drive file nope") || !strings.Contains(stderr, "hint:") {
 		t.Fatalf("exit %d: %s", code, stderr)
 	}
 }
@@ -235,14 +235,5 @@ func TestDriveDownload(t *testing.T) {
 	_, stderr, code = runCLI(t, p, "drive", "download", "pdf1")
 	if code != 1 || !strings.Contains(stderr, "out") {
 		t.Fatalf("missing --out: exit %d stderr %q", code, stderr)
-	}
-}
-
-func TestFormatDriveSize(t *testing.T) {
-	tests := map[int64]string{0: "", 512: "512 B", 2048: "2.0 KiB", 5 << 20: "5.0 MiB", 3 << 30: "3.0 GiB"}
-	for n, want := range tests {
-		if got := formatDriveSize(n); got != want {
-			t.Errorf("formatDriveSize(%d) = %q, want %q", n, got, want)
-		}
 	}
 }

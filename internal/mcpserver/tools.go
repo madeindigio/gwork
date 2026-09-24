@@ -9,6 +9,12 @@ import (
 	"github.com/digio/gwork-cli/internal/auth"
 )
 
+// timeExpressions documents the time expressions accepted by tool inputs
+// parsed with timeutil (calendar time_min/time_max, chat since/until). Tool
+// descriptions append it so every tool explains the syntax the same way.
+const timeExpressions = "Accepts RFC 3339 (2026-09-24T10:00:00+02:00 or ...Z), a date YYYY-MM-DD, " +
+	"today, tomorrow, yesterday, now, or a relative value: +3d (3 days from now), 7d or -7d (7 days ago); units m, h, d, w."
+
 // ToolFunc is the business function behind a typed tool: it receives the
 // decoded, schema-validated input and returns the structured output.
 type ToolFunc[In, Out any] func(ctx context.Context, in In) (Out, error)

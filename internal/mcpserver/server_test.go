@@ -121,28 +121,3 @@ func TestAddReadOnlyTool(t *testing.T) {
 		t.Fatal("expected validation error")
 	}
 }
-
-func TestTruncateText(t *testing.T) {
-	cases := []struct {
-		in    string
-		max   int
-		want  string
-		trunc bool
-	}{
-		{"hello", 10, "hello", false},
-		{"hello", 5, "hello", false},
-		{"hello", 3, "hel", true},
-		{"ñandú", 2, "ña", true},
-		{"hello", 0, "hello", false},
-		{"", 3, "", false},
-	}
-	for _, c := range cases {
-		got, trunc := TruncateText(c.in, c.max)
-		if got != c.want || trunc != c.trunc {
-			t.Errorf("TruncateText(%q,%d) = %q,%v want %q,%v", c.in, c.max, got, trunc, c.want, c.trunc)
-		}
-	}
-	if effectiveMaxChars(0) != DefaultMaxChars || effectiveMaxChars(7) != 7 {
-		t.Fatal("effectiveMaxChars mismatch")
-	}
-}

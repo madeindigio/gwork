@@ -195,7 +195,7 @@ func newAuthStatusCmd(a *App) *cobra.Command {
 			return a.Print(info, func(w io.Writer) error {
 				expiry := ""
 				if info.TokenExpiry != nil {
-					expiry = info.TokenExpiry.Local().Format(time.RFC3339)
+					expiry = info.TokenExpiry.In(a.Location()).Format(time.RFC3339)
 				}
 				creds := info.CredentialsSource
 				if info.CredentialsError != "" {

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -239,6 +240,11 @@ func TestGmailAttachmentCLI(t *testing.T) {
 	if b, err := os.ReadFile(dest); err != nil || string(b) != "PDF-DATA" {
 		t.Errorf("file = %q, %v", b, err)
 	}
+	if fi, err := os.Stat(dest); err != nil {
+		t.Error(err)
+	} else if runtime.GOOS != "windows" && fi.Mode().Perm() != 0o600 {
+		t.Errorf("mode = %v, want 0600", fi.Mode().Perm())
+	}
 
 	// Refuses to overwrite without --force.
 	if err := os.WriteFile(dest, []byte("keep"), 0o644); err != nil {
@@ -274,22 +280,5 @@ func TestGmailAttachmentCLIRequiresOut(t *testing.T) {
 	_, errOut, code := runCLI(t, testutil.NewFakeProvider(t, gmailTestMux(t)), "gmail", "attachment", "m1", "att1")
 	if code != 1 || !strings.Contains(errOut, "--out") {
 		t.Errorf("code=%d stderr=%s", code, errOut)
-	}
-}
-
-func TestGmailWriteFileAtomicNoOverwrite(t *testing.T) {
-	dest := filepath.Join(t.TempDir(), "f.bin")
-	if err := gmailWriteFileAtomic(dest, []byte("a"), false); err != nil {
-		t.Fatal(err)
-	}
-	fi, err := os.Stat(dest)
-	if err != nil || fi.Mode().Perm() != 0o644 {
-		t.Errorf("mode = %v, %v", fi.Mode(), err)
-	}
-	if err := gmailWriteFileAtomic(dest, []byte("b"), false); err == nil {
-		t.Error("want error on existing file")
-	}
-	if b, _ := os.ReadFile(dest); string(b) != "a" {
-		t.Errorf("content = %q", b)
 	}
 }

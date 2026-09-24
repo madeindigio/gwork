@@ -2,22 +2,19 @@ package drive
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"io"
-	"io/fs"
 	"net/http"
-	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 
 	"google.golang.org/api/option"
+
+	"github.com/digio/gwork-cli/internal/fsutil"
 )
 
 // ErrExists is returned by Download when the output file exists and Force
-// is not set.
-var ErrExists = errors.New("output file already exists")
+// is not set. It is fsutil.ErrExists.
+var ErrExists = fsutil.ErrExists
 
 // DownloadOptions configure Download.
 type DownloadOptions struct {
@@ -52,12 +49,12 @@ type DownloadResult struct {
 // the destination directory and renamed into place once complete, so a
 // failed download never leaves a partial file. Existing files are only
 // replaced with opts.Force. The file is created with mode 0600 because
-// Drive content is often private.
+// Drive content is often private (see fsutil.WriteFile).
 func Download(ctx context.Context, fileID string, opts DownloadOptions, clientOpts ...option.ClientOption) (*DownloadResult, error) {
 	if opts.Out == "" {
 		return nil, fmt.Errorf("an output path is required")
 	}
-	if err := checkOut(opts.Out, opts.Force); err != nil {
+	if err := fsutil.CheckDest(opts.Out, opts.Force); err != nil {
 		return nil, err
 	}
 	format := strings.ToLower(strings.TrimSpace(opts.ExportFormat))
@@ -114,58 +111,12 @@ func Download(ctx context.Context, fileID string, opts DownloadOptions, clientOp
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	n, err := writeAtomic(opts.Out, resp.Body, opts.Force)
+	n, err := fsutil.WriteFile(opts.Out, resp.Body, opts.Force)
 	if err != nil {
 		return nil, err
 	}
 	res.Bytes = n
 	return res, nil
-}
-
-// checkOut fails when out is a directory, or exists and force is false.
-func checkOut(out string, force bool) error {
-	st, err := os.Stat(out)
-	switch {
-	case errors.Is(err, fs.ErrNotExist):
-		return nil
-	case err != nil:
-		return fmt.Errorf("check output %s: %w", out, err)
-	case st.IsDir():
-		return fmt.Errorf("output %s is a directory; pass a file path", out)
-	case !force:
-		return fmt.Errorf("%w: %s (use --force to overwrite)", ErrExists, out)
-	}
-	return nil
-}
-
-// writeAtomic copies r to a temporary file next to out and renames it to
-// out. The temporary file is removed on any failure.
-func writeAtomic(out string, r io.Reader, force bool) (n int64, err error) {
-	tmp, err := os.CreateTemp(filepath.Dir(out), "."+filepath.Base(out)+".gwork-*")
-	if err != nil {
-		return 0, fmt.Errorf("create temporary file: %w", err)
-	}
-	defer func() {
-		if err != nil {
-			_ = tmp.Close()
-			_ = os.Remove(tmp.Name())
-		}
-	}()
-	if n, err = io.Copy(tmp, r); err != nil {
-		return 0, fmt.Errorf("write %s: %w", out, err)
-	}
-	if err = tmp.Close(); err != nil {
-		return 0, fmt.Errorf("write %s: %w", out, err)
-	}
-	// Re-check right before the rename: the file may have appeared while
-	// downloading.
-	if err = checkOut(out, force); err != nil {
-		return 0, err
-	}
-	if err = os.Rename(tmp.Name(), out); err != nil {
-		return 0, fmt.Errorf("rename to %s: %w", out, err)
-	}
-	return n, nil
 }
 
 // availableFormats returns the short names (or MIME types) of the export

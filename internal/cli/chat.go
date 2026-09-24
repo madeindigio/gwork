@@ -5,7 +5,6 @@ import (
 	"io"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/spf13/cobra"
 
@@ -58,7 +57,7 @@ func newChatSpacesCmd(app *App) *cobra.Command {
 					if s.MemberCount > 0 {
 						members = strconv.FormatInt(s.MemberCount, 10)
 					}
-					rows = append(rows, []string{s.Name, s.Type, output.Ellipsize(s.DisplayName, 50), members, chatTime(app, s.LastActiveTime)})
+					rows = append(rows, []string{s.Name, s.Type, output.Ellipsize(s.DisplayName, 50), members, output.DateTime(s.LastActiveTime, app.Location())})
 				}
 				return output.Table(w, []string{"NAME", "TYPE", "DISPLAY NAME", "MEMBERS", "LAST ACTIVE"}, rows)
 			})
@@ -92,7 +91,7 @@ func newChatDMCmd(app *App) *cobra.Command {
 				return output.KeyValues(w,
 					"Name", space.Name,
 					"Type", space.Type,
-					"Last active", chatTime(app, space.LastActiveTime),
+					"Last active", output.DateTime(space.LastActiveTime, app.Location()),
 					"URI", space.URI,
 				)
 			})
@@ -184,7 +183,7 @@ func newChatGetCmd(app *App) *cobra.Command {
 					"Name", m.Name,
 					"Space", m.Space,
 					"Thread", m.Thread,
-					"Created", chatTime(app, m.CreateTime),
+					"Created", output.DateTime(m.CreateTime, app.Location()),
 					"Sender", chatSender(m.Sender),
 				); err != nil {
 					return err
@@ -277,7 +276,7 @@ func writeChatMessages(w io.Writer, app *App, msgs []chat.Message, withSpace boo
 				return err
 			}
 		}
-		header := chatTime(app, m.CreateTime) + "  " + chatSender(m.Sender)
+		header := output.DateTime(m.CreateTime, app.Location()) + "  " + chatSender(m.Sender)
 		if withSpace {
 			header += "  " + m.Space
 		}
@@ -310,12 +309,4 @@ func chatSender(u chat.User) string {
 		return u.Name
 	}
 	return "unknown"
-}
-
-// chatTime formats t in the App clock's location, or "" when zero.
-func chatTime(app *App, t time.Time) string {
-	if t.IsZero() {
-		return ""
-	}
-	return t.In(app.CurrentTime().Location()).Format("2006-01-02 15:04")
 }

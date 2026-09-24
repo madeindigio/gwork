@@ -14,11 +14,6 @@ import (
 // call cannot flood the model's context.
 const calendarMaxEvents = 250
 
-// calendarTimeFormats documents the time expressions accepted by the
-// calendar tools.
-const calendarTimeFormats = "Accepts RFC 3339 (2026-09-24T10:00:00+02:00 or ...Z), a date YYYY-MM-DD, " +
-	"today, tomorrow, yesterday, now, or a relative value: +3d (3 days from now), 7d or -7d (7 days ago); units m, h, d, w."
-
 type calendarListCalendarsInput struct {
 	// No fields: an empty struct still yields an object schema.
 }
@@ -76,7 +71,7 @@ func registerCalendar(s *mcp.Server, deps Deps) {
 		Name: "calendar_list_events",
 		Description: "List events of a Google Calendar calendar in a time window, with recurring events expanded " +
 			"and ordered by start time. Defaults: calendar primary, from today 00:00 to 7 days from now, 50 events. " +
-			"time_min/time_max: " + calendarTimeFormats,
+			"time_min/time_max: " + timeExpressions,
 	}, func(ctx context.Context, in calendarListEventsInput) (calendarListEventsOutput, error) {
 		win, err := timeutil.ParseWindow(in.TimeMin, in.TimeMax, deps.CurrentTime(), calendar.DefaultFrom, calendar.DefaultTo)
 		if err != nil {

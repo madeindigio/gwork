@@ -123,7 +123,7 @@ func (f FileStore) Save(t *StoredToken) error {
 	if err != nil {
 		return fmt.Errorf("encode token: %w", err)
 	}
-	return config.WriteFileAtomic(p, data, 0o600)
+	return config.WriteFileAtomic(p, data)
 }
 
 // Delete implements TokenStore.

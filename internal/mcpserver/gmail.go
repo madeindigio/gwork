@@ -98,11 +98,8 @@ func registerGmail(s *mcp.Server, deps Deps) {
 		if err != nil {
 			return gmailGetMessageOutput{}, err
 		}
-		limit := effectiveMaxChars(in.MaxChars)
-		var cutBody, cutHTML bool
-		msg.Body, cutBody = TruncateText(msg.Body, limit)
-		msg.HTML, cutHTML = TruncateText(msg.HTML, limit)
-		return gmailGetMessageOutput{Message: *msg, Truncated: cutBody || cutHTML}, nil
+		truncated := truncateEach(in.MaxChars, &msg.Body, &msg.HTML)
+		return gmailGetMessageOutput{Message: *msg, Truncated: truncated}, nil
 	})
 
 	addReadOnlyTool(s, deps, auth.Gmail, &mcp.Tool{
@@ -121,7 +118,7 @@ func registerGmail(s *mcp.Server, deps Deps) {
 		if err != nil {
 			return gmailGetThreadOutput{}, err
 		}
-		truncated := truncateThreadBodies(th, effectiveMaxChars(in.MaxChars))
+		truncated := truncateThreadBodies(th, in.MaxChars)
 		return gmailGetThreadOutput{Thread: *th, Truncated: truncated}, nil
 	})
 
@@ -141,23 +138,13 @@ func registerGmail(s *mcp.Server, deps Deps) {
 	})
 }
 
-// truncateThreadBodies spends a budget of budget characters on the thread's
-// bodies in order, cutting the one that exceeds it and emptying the rest.
-// It reports whether anything was cut.
-func truncateThreadBodies(th *gmail.Thread, budget int) bool {
-	truncated := false
+// truncateThreadBodies spends a budget of maxChars characters (default
+// DefaultMaxChars) on the thread's bodies in order, cutting the one that
+// exceeds it and emptying the rest. It reports whether anything was cut.
+func truncateThreadBodies(th *gmail.Thread, maxChars int) bool {
+	bodies := make([]*string, len(th.Messages))
 	for i := range th.Messages {
-		m := &th.Messages[i]
-		if budget <= 0 {
-			if m.Body != "" {
-				m.Body, truncated = "", true
-			}
-			continue
-		}
-		var cut bool
-		m.Body, cut = TruncateText(m.Body, budget)
-		truncated = truncated || cut
-		budget -= len([]rune(m.Body))
+		bodies[i] = &th.Messages[i].Body
 	}
-	return truncated
+	return truncateShared(maxChars, bodies...)
 }

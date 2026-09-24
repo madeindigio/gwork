@@ -34,7 +34,9 @@ internal/buildinfo/          version, commit, embedded OAuth client (ldflags)
 internal/config/             config dir (XDG / os.UserConfigDir), config.json, accounts
 internal/auth/               OAuth config, login flow, token store, persisting TokenSource,
                              scope registry, auth error classification
-internal/output/             text/json renderers shared by all commands
+internal/output/             text/json renderers and text formatting helpers (timestamps,
+                             sizes, "Name <email>") shared by all commands
+internal/fsutil/             atomic 0600 file writing (downloads, config, token files)
 internal/workspace/          business logic, one package per API, no cobra/MCP imports
   gmail/  calendar/  drive/  chat/
 internal/cli/                cobra commands (thin adapters over workspace/*)
@@ -106,34 +108,54 @@ fail with an actionable message: `run: gwork auth login --services chat`.
 - HTTP 403 `insufficientPermissions`: missing scope message per service.
 - API not enabled / admin blocked: surface Google's message plus a hint to
   `docs/setup-google-cloud.md`.
+- HTTP 404, 429 and other 403s: `ErrNotFound`, `ErrRateLimited`,
+  `ErrPermissionDenied` with a hint.
+- Classified messages keep the context added by the code that failed and
+  Google's message: `not found: get message 18a...: Requested entity was not
+  found.` followed by `hint: ...`.
 
 ## CLI surface (v1)
 
+Generated from `gwork <group> <cmd> --help`; keep in sync when adding
+flags.
+
 ```
 gwork version
-gwork auth login|logout|status|list|use [--services ...]
-gwork gmail search <query> [--max N]            # Gmail query syntax
+gwork auth login [--services gmail,calendar,drive,chat|all] [--no-browser]
+gwork auth logout [email] [--all] [--no-revoke]
+gwork auth status
+gwork auth list
+gwork auth use <email>
+gwork gmail search <query> [--max 20] [--include-spam-trash]   # Gmail query syntax
 gwork gmail get <messageId> [--raw-html]
 gwork gmail thread <threadId>
 gwork gmail labels
-gwork gmail attachment <messageId> <attachmentId> --out <path>
+gwork gmail attachment <messageId> <attachmentId> --out <path> [--force]
 gwork calendar calendars
-gwork calendar events [--calendar primary] [--from] [--to] [--query] [--max]
-gwork calendar get <eventId> [--calendar]
-gwork drive search [text] [--name] [--mime] [--owner] [--folder] [--query raw] [--max]
+gwork calendar events [--calendar primary] [--from today] [--to +7d] [-q|--query] [--max 50]
+gwork calendar get <eventId> [--calendar primary]
+gwork drive search [text] [--name] [--type doc|sheet|slides|pdf|image|folder|form|drawing]
+                   [--mime] [--owner] [--folder] [--modified-after] [--query raw]
+                   [--order-by] [--max 25]
 gwork drive get <fileId>                        # metadata
-gwork drive read <fileId> [--max-bytes]         # text content (export for Google docs)
-gwork drive download <fileId> --out <path>
-gwork chat spaces [--type]
+gwork drive read <fileId> [--format md|txt|csv] [--max-bytes 5242880]
+gwork drive download <fileId> --out <path> [--export-format docx|xlsx|pptx|pdf|...] [--force]
+gwork chat spaces [--type space|group|dm] [--max 100]
 gwork chat dm <email>                           # find direct message space
-gwork chat messages <space> [--since] [--until] [--max]
-gwork chat get <messageName>
-gwork chat search <text> [--space ...] [--since 7d] [--max]   # client-side filter
-gwork mcp [--services ...]
+gwork chat messages <space> [--since] [--until] [--thread] [--order desc|asc] [--max 50] [--no-resolve-names]
+gwork chat get <messageName> [--no-resolve-names]
+gwork chat search <text> [--space ...] [--since 7d] [--max 50] [--max-scan 2000] [--no-resolve-names]
+gwork mcp [--services gmail,calendar,drive,chat|all] [--log-level info]
 ```
 
-Global flags: `--account`, `--credentials`, `--output text|json` (`--json`
-shortcut), `--timeout`.
+Global flags: `--account`, `--credentials`, `-o/--output text|json` (`--json`
+shortcut), `--timeout` (default 1m, 0 disables).
+
+Time expressions (`--from/--to/--since/--until`, MCP `time_min/time_max/
+since/until`): RFC 3339, `YYYY-MM-DD`, `today`, `tomorrow`, `yesterday`,
+`now`, or relative `+3d` (future) / `7d` or `-7d` (past) with units
+`m h d w`. Text output shows timestamps as `YYYY-MM-DD HH:MM` in the local
+time zone.
 
 Content rules:
 - Gmail body: prefer `text/plain`, fall back to HTML converted to text.
@@ -142,27 +164,53 @@ Content rules:
   downloaded directly; binaries (PDF, images, Office) return an error suggesting
   `drive download`. Shared drives supported (`supportsAllDrives`,
   `includeItemsFromAllDrives`).
+- Downloads (`gmail attachment`, `drive download`) are written atomically
+  (temporary file in the destination directory, fsync, rename) with mode
+  `0600`, and never replace an existing file without `--force`.
 - Chat has no user-level full-text search API: `chat search` lists messages in
   the selected spaces within a time window and filters client-side, capped by
   `--max-scan`.
+- Chat sender display names: with user authentication the Chat API returns
+  senders only as `users/{id}` without `displayName`. gwork tries to fill
+  names from space memberships (disable with `--no-resolve-names`), but
+  Google usually omits member display names too, so senders are often shown
+  as `users/{id}`. Showing names (e.g. via the People API) is follow-up
+  GWORK-US-0030.
 
 ## MCP server
 
 `gwork mcp` runs over stdio with the official go-sdk. Tools (all annotated
 `readOnlyHint: true`), each with typed input/output structs:
 
-| Tool | Maps to |
+| Tool | Inputs |
 |---|---|
-| `whoami` | current account + granted services |
-| `gmail_search`, `gmail_get_message`, `gmail_get_thread`, `gmail_list_labels` | gmail |
-| `calendar_list_calendars`, `calendar_list_events`, `calendar_get_event` | calendar |
-| `drive_search`, `drive_get_file`, `drive_read_file` | drive |
-| `chat_list_spaces`, `chat_find_dm`, `chat_list_messages`, `chat_get_message`, `chat_search_messages` | chat |
+| `whoami` | (none) current account + granted services |
+| `gmail_search` | `query`, `max_results` |
+| `gmail_get_message` | `message_id`, `max_chars`, `include_html` |
+| `gmail_get_thread` | `thread_id`, `max_chars` (budget shared by all bodies) |
+| `gmail_list_labels` | (none) |
+| `calendar_list_calendars` | (none) |
+| `calendar_list_events` | `calendar_id`, `time_min`, `time_max`, `query`, `max_results` (max 250) |
+| `calendar_get_event` | `calendar_id`, `event_id`, `max_chars` |
+| `drive_search` | `query_text`, `name`, `type`, `mime_type`, `owner`, `folder_id`, `modified_after`, `raw_query`, `max_results` |
+| `drive_get_file` | `file_id` |
+| `drive_read_file` | `file_id`, `max_chars` |
+| `chat_list_spaces` | `type`, `max_results` |
+| `chat_find_dm` | `email` |
+| `chat_list_messages` | `space`, `since`, `until`, `thread`, `order`, `max_results`, `max_chars` |
+| `chat_get_message` | `message_name`, `max_chars` |
+| `chat_search_messages` | `text`, `spaces`, `since`, `max_results`, `max_scan`, `max_chars` |
+
+There is intentionally no download tool: MCP clients receive text, not
+files.
 
 - `--services` limits which tool groups are registered; tools for services
   whose scopes are not granted are not registered (logged to stderr).
 - Long text is truncated with an explicit `truncated: true` flag and a
-  `max_chars` input parameter.
+  `max_chars` input parameter (default 20000; per text, or a shared budget
+  for thread bodies).
+- Errors are classified like in the CLI and returned as tool errors
+  (`isError: true`) with the hint.
 - Nothing is written to stdout except protocol messages; logs go to stderr.
 
 ## Testing

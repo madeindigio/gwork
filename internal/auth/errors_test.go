@@ -41,17 +41,19 @@ func TestClassifyOAuth(t *testing.T) {
 
 func TestClassifyAPI(t *testing.T) {
 	cases := []struct {
-		name string
-		err  *googleapi.Error
-		kind error
-		hint string
+		name   string
+		err    *googleapi.Error
+		kind   error
+		hint   string
+		prefix string // expected start of the message, before the wrapping context
 	}{
 		{
 			name: "insufficient permissions",
 			err: &googleapi.Error{Code: 403, Message: "Request had insufficient authentication scopes.",
 				Errors: []googleapi.ErrorItem{{Reason: "insufficientPermissions"}}},
-			kind: ErrInsufficientScope,
-			hint: "gwork auth login --services chat",
+			kind:   ErrInsufficientScope,
+			hint:   "gwork auth login --services chat",
+			prefix: "missing OAuth scope",
 		},
 		{
 			name: "scope insufficient via details",
@@ -63,18 +65,19 @@ func TestClassifyAPI(t *testing.T) {
 			name: "service disabled",
 			err: &googleapi.Error{Code: 403, Message: "Google Chat API has not been used in project 123 before or it is disabled.",
 				Body: `{"error":{"details":[{"reason":"SERVICE_DISABLED"}]}}`},
-			kind: ErrAPIDisabled,
-			hint: "setup-google-cloud.md",
+			kind:   ErrAPIDisabled,
+			hint:   "setup-google-cloud.md",
+			prefix: "the API is not enabled for the OAuth client's project",
 		},
 		{
 			name: "access not configured",
 			err:  &googleapi.Error{Code: 403, Errors: []googleapi.ErrorItem{{Reason: "accessNotConfigured"}}},
 			kind: ErrAPIDisabled,
 		},
-		{name: "not found", err: &googleapi.Error{Code: 404, Message: "Requested entity was not found."}, kind: ErrNotFound},
-		{name: "rate limit", err: &googleapi.Error{Code: 429, Message: "Too many requests"}, kind: ErrRateLimited},
-		{name: "unauthorized", err: &googleapi.Error{Code: 401, Message: "Invalid Credentials"}, kind: ErrReauthRequired},
-		{name: "other 403", err: &googleapi.Error{Code: 403, Message: "The caller does not have permission"}, kind: ErrPermissionDenied},
+		{name: "not found", err: &googleapi.Error{Code: 404, Message: "Requested entity was not found."}, kind: ErrNotFound, prefix: "not found"},
+		{name: "rate limit", err: &googleapi.Error{Code: 429, Message: "Too many requests"}, kind: ErrRateLimited, prefix: "Google API rate limit exceeded"},
+		{name: "unauthorized", err: &googleapi.Error{Code: 401, Message: "Invalid Credentials"}, kind: ErrReauthRequired, prefix: "Google rejected the credentials"},
+		{name: "other 403", err: &googleapi.Error{Code: 403, Message: "The caller does not have permission"}, kind: ErrPermissionDenied, prefix: "permission denied"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -89,7 +92,60 @@ func TestClassifyAPI(t *testing.T) {
 			if c.hint != "" && !strings.Contains(HintFor(err), c.hint) {
 				t.Fatalf("hint %q does not contain %q", HintFor(err), c.hint)
 			}
+			// The wrapping context and Google's message survive
+			// classification.
+			var ae *Error
+			if !errors.As(err, &ae) {
+				t.Fatalf("not an *Error: %T", err)
+			}
+			if !strings.Contains(ae.Message, "list spaces: ") {
+				t.Errorf("message %q lost the wrapping context", ae.Message)
+			}
+			if c.err.Message != "" && !strings.HasSuffix(ae.Message, c.err.Message) {
+				t.Errorf("message %q lost Google's message %q", ae.Message, c.err.Message)
+			}
+			if c.prefix != "" && !strings.HasPrefix(ae.Message, c.prefix+": list spaces: ") {
+				t.Errorf("message %q, want prefix %q", ae.Message, c.prefix+": list spaces: ")
+			}
 		})
+	}
+}
+
+// classifiedMessage returns the Message of a classified error.
+func classifiedMessage(t *testing.T, err error) string {
+	t.Helper()
+	var ae *Error
+	if !errors.As(err, &ae) {
+		t.Fatalf("not an *Error: %T %v", err, err)
+	}
+	return ae.Message
+}
+
+func TestClassifyKeepsContext(t *testing.T) {
+	ge := &googleapi.Error{Code: 404, Message: "Requested entity was not found."}
+	err := ClassifyService(fmt.Errorf("get message 18a: %w", ge), Gmail)
+	want := "not found: get message 18a: Requested entity was not found."
+	if !strings.HasPrefix(err.Error(), want+"\nhint: ") {
+		t.Errorf("got %q, want prefix %q", err.Error(), want)
+	}
+
+	// Without wrapping there is no context to keep.
+	if got := classifiedMessage(t, ClassifyService(ge, Gmail)); got != "not found: Requested entity was not found." {
+		t.Errorf("unwrapped: %q", got)
+	}
+
+	// Context added after the cause is not a prefix and is dropped.
+	if got := classifiedMessage(t, ClassifyService(fmt.Errorf("%w (while listing)", ge), Gmail)); got != "not found: Requested entity was not found." {
+		t.Errorf("suffix context: %q", got)
+	}
+
+	// The method and URL of a *url.Error are dropped, the caller's
+	// context is kept.
+	re := &oauth2.RetrieveError{ErrorCode: "invalid_grant", ErrorDescription: "Token has been expired or revoked."}
+	wrapped := fmt.Errorf("list spaces: %w", &url.Error{Op: "Get", URL: "https://chat.googleapis.com/v1/spaces", Err: re})
+	msg := classifiedMessage(t, Classify(wrapped))
+	if !strings.Contains(msg, "(list spaces: invalid_grant: Token has been expired or revoked.)") || strings.Contains(msg, "https://") {
+		t.Errorf("oauth message %q", msg)
 	}
 }
 

@@ -5,7 +5,6 @@ import (
 	"io"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/spf13/cobra"
 
@@ -61,7 +60,7 @@ func newDriveSearchCmd(app *App) *cobra.Command {
 				}
 				rows := make([][]string, 0, len(files))
 				for _, f := range files {
-					rows = append(rows, []string{f.ID, f.Type, formatDriveTime(f.ModifiedTime), formatDriveSize(f.Size), output.Ellipsize(f.Name, 60)})
+					rows = append(rows, []string{f.ID, f.Type, output.DateTime(f.ModifiedTime, app.Location()), output.Bytes(f.Size), output.Ellipsize(f.Name, 60)})
 				}
 				return output.Table(w, []string{"ID", "TYPE", "MODIFIED", "SIZE", "NAME"}, rows)
 			})
@@ -102,9 +101,9 @@ func newDriveGetCmd(app *App) *cobra.Command {
 					"Name", f.Name,
 					"Type", f.Type,
 					"MIME type", f.MimeType,
-					"Size", formatDriveSize(f.Size),
-					"Created", formatDriveTime(f.CreatedTime),
-					"Modified", formatDriveTime(f.ModifiedTime),
+					"Size", output.Bytes(f.Size),
+					"Created", output.DateTime(f.CreatedTime, app.Location()),
+					"Modified", output.DateTime(f.ModifiedTime, app.Location()),
 					"Last modified by", f.LastModifyingUser,
 					"Owners", strings.Join(f.Owners, ", "),
 					"Shared", strconv.FormatBool(f.Shared),
@@ -211,30 +210,4 @@ func newDriveDownloadCmd(app *App) *cobra.Command {
 	f.BoolVar(&opts.Force, "force", false, "overwrite the destination if it exists")
 	_ = cmd.MarkFlagRequired("out")
 	return cmd
-}
-
-// formatDriveTime formats a timestamp for tables, or "" for the zero time.
-func formatDriveTime(t time.Time) string {
-	if t.IsZero() {
-		return ""
-	}
-	return t.Local().Format("2006-01-02 15:04")
-}
-
-// formatDriveSize formats a byte count in human units, or "" for 0 (Google
-// files have no size).
-func formatDriveSize(n int64) string {
-	const unit = 1024
-	if n <= 0 {
-		return ""
-	}
-	if n < unit {
-		return fmt.Sprintf("%d B", n)
-	}
-	div, exp := int64(unit), 0
-	for m := n / unit; m >= unit; m /= unit {
-		div *= unit
-		exp++
-	}
-	return fmt.Sprintf("%.1f %ciB", float64(n)/float64(div), "KMGTPE"[exp])
 }

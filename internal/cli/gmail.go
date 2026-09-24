@@ -3,7 +3,6 @@ package cli
 import (
 	"errors"
 	"io"
-	"time"
 
 	"github.com/spf13/cobra"
 
@@ -57,7 +56,7 @@ func newGmailSearchCmd(app *App) *cobra.Command {
 				rows := make([][]string, 0, len(msgs))
 				for _, m := range msgs {
 					rows = append(rows, []string{
-						formatGmailDate(m.Date),
+						output.DateTime(m.Date, app.Location()),
 						output.Ellipsize(m.From, 30),
 						output.Ellipsize(m.Subject, 60),
 						m.ID,
@@ -96,12 +95,4 @@ func newGmailLabelsCmd(app *App) *cobra.Command {
 			})
 		},
 	}
-}
-
-// formatGmailDate renders a message date in local time for text output.
-func formatGmailDate(t time.Time) string {
-	if t.IsZero() {
-		return ""
-	}
-	return t.Local().Format("2006-01-02 15:04")
 }

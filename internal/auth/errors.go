@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"golang.org/x/oauth2"
@@ -128,22 +129,52 @@ func ClassifyService(err error, svc Service) error {
 
 	var re *oauth2.RetrieveError
 	if errors.As(err, &re) {
-		return classifyOAuth(err, re.ErrorCode, re.ErrorDescription)
+		return classifyOAuth(err, errContext(err, re), re.ErrorCode, re.ErrorDescription)
 	}
 
 	var ge *googleapi.Error
 	if errors.As(err, &ge) {
-		return classifyAPI(err, ge, svc)
+		return classifyAPI(err, errContext(err, ge), ge, svc)
 	}
 	return err
 }
 
+// errContext returns the context that wrapping added in front of the
+// Google error cause, e.g. "get message 18a" for
+// fmt.Errorf("get message 18a: %w", apiErr), so a classified message can
+// keep saying what failed. A *url.Error in the chain (token refresh
+// failures) is treated as part of the cause, since its method and URL are
+// noise for users. It returns "" when the chain adds no leading context.
+func errContext(err, cause error) string {
+	var ue *url.Error
+	if errors.As(err, &ue) && errors.Is(ue, cause) {
+		cause = ue
+	}
+	full, tail := err.Error(), cause.Error()
+	if !strings.HasSuffix(full, tail) {
+		return ""
+	}
+	return strings.TrimRight(strings.TrimSuffix(full, tail), ": \t\n")
+}
+
+// withContext joins a summary, the wrapping context (may be empty) and the
+// Google detail as "summary: context: detail".
+func withContext(summary, ctx, detail string) string {
+	if ctx == "" {
+		return summary + ": " + detail
+	}
+	return summary + ": " + ctx + ": " + detail
+}
+
 // classifyOAuth handles OAuth error codes from the token endpoint or the
 // authorization callback.
-func classifyOAuth(err error, code, desc string) error {
+func classifyOAuth(err error, ctx, code, desc string) error {
 	detail := code
 	if desc != "" {
 		detail += ": " + desc
+	}
+	if ctx != "" {
+		detail = ctx + ": " + detail
 	}
 	switch code {
 	case "invalid_grant":
@@ -172,7 +203,7 @@ func classifyOAuth(err error, code, desc string) error {
 }
 
 // classifyAPI handles googleapi.Error responses.
-func classifyAPI(err error, ge *googleapi.Error, svc Service) error {
+func classifyAPI(err error, ctx string, ge *googleapi.Error, svc Service) error {
 	reasons := apiReasons(ge)
 	msg := ge.Message
 	if msg == "" {
@@ -191,23 +222,23 @@ func classifyAPI(err error, ge *googleapi.Error, svc Service) error {
 
 	switch {
 	case ge.Code == http.StatusUnauthorized:
-		return &Error{Kind: ErrReauthRequired, Message: "Google rejected the credentials: " + msg, Hint: "run: gwork auth login", Err: err}
+		return &Error{Kind: ErrReauthRequired, Message: withContext("Google rejected the credentials", ctx, msg), Hint: "run: gwork auth login", Err: err}
 	case has("insufficientPermissions", "ACCESS_TOKEN_SCOPE_INSUFFICIENT") ||
 		strings.Contains(strings.ToLower(msg), "insufficient authentication scopes"):
 		hint := "run: gwork auth login --services <service>"
 		if svc != "" {
 			hint = LoginHint(svc)
 		}
-		return &Error{Kind: ErrInsufficientScope, Message: "missing OAuth scope: " + msg, Hint: hint, Err: err}
+		return &Error{Kind: ErrInsufficientScope, Message: withContext("missing OAuth scope", ctx, msg), Hint: hint, Err: err}
 	case has("accessNotConfigured", "SERVICE_DISABLED", "API_DISABLED") ||
 		strings.Contains(ge.Body, "SERVICE_DISABLED") || strings.Contains(msg, "has not been used in project"):
-		return &Error{Kind: ErrAPIDisabled, Message: "the API is not enabled for the OAuth client's project: " + msg, Hint: SetupDocHint, Err: err}
+		return &Error{Kind: ErrAPIDisabled, Message: withContext("the API is not enabled for the OAuth client's project", ctx, msg), Hint: SetupDocHint, Err: err}
 	case ge.Code == http.StatusTooManyRequests || has("rateLimitExceeded", "userRateLimitExceeded", "RATE_LIMIT_EXCEEDED", "quotaExceeded"):
-		return &Error{Kind: ErrRateLimited, Message: "Google API rate limit exceeded: " + msg, Hint: "wait a moment and retry, or reduce --max", Err: err}
+		return &Error{Kind: ErrRateLimited, Message: withContext("Google API rate limit exceeded", ctx, msg), Hint: "wait a moment and retry, or reduce --max", Err: err}
 	case ge.Code == http.StatusNotFound:
-		return &Error{Kind: ErrNotFound, Message: "not found: " + msg, Hint: "check the ID and that your account can access it", Err: err}
+		return &Error{Kind: ErrNotFound, Message: withContext("not found", ctx, msg), Hint: "check the ID and that your account can access it", Err: err}
 	case ge.Code == http.StatusForbidden:
-		return &Error{Kind: ErrPermissionDenied, Message: "permission denied: " + msg, Hint: "the resource may be restricted, or an administrator may have blocked this app; " + SetupDocHint, Err: err}
+		return &Error{Kind: ErrPermissionDenied, Message: withContext("permission denied", ctx, msg), Hint: "the resource may be restricted, or an administrator may have blocked this app; " + SetupDocHint, Err: err}
 	}
 	return err
 }

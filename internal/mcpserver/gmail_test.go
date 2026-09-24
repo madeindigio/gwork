@@ -130,7 +130,7 @@ func TestGmailGetMessageTool(t *testing.T) {
 func TestGmailGetMessageToolNotFound(t *testing.T) {
 	cs, _ := newTestSession(t, testDeps(t, gmailTestMux(t)), auth.Gmail)
 	_, res := callTool[gmailGetMessageOutput](t, cs, "gmail_get_message", map[string]any{"message_id": "missing"})
-	if !res.IsError || !strings.Contains(resultText(res), "not found") {
+	if !res.IsError || !strings.Contains(resultText(res), "not found: get message missing") {
 		t.Errorf("want tool error, got %s", resultText(res))
 	}
 }

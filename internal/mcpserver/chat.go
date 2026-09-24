@@ -106,7 +106,7 @@ func registerChat(s *mcp.Server, deps Deps) {
 		Name: "chat_list_messages",
 		Description: "List messages of a Google Chat space, newest first by default, optionally within a time window " +
 			"and/or one thread. Senders are users/{id}; display names are filled in from space memberships when " +
-			"Google provides them.",
+			"Google provides them. since/until: " + timeExpressions,
 	}, func(ctx context.Context, in chatListMessagesInput) (chatMessagesOutput, error) {
 		win, err := timeutil.ParseWindow(in.Since, in.Until, deps.CurrentTime(), "", "")
 		if err != nil {
@@ -155,7 +155,8 @@ func registerChat(s *mcp.Server, deps Deps) {
 			"LIMITATION: Chat has no server-side text search, so this lists the messages of each space " +
 			"(all spaces, or the given ones) created since `since` (default 7d) and filters them locally, " +
 			"stopping after max_scan messages. When cap_reached is true results may be incomplete: narrow " +
-			"since or spaces. Matches are newest first; scanned and spaces_scanned report the coverage.",
+			"since or spaces. Matches are newest first; scanned and spaces_scanned report the coverage. " +
+			"since: " + timeExpressions,
 	}, func(ctx context.Context, in chatSearchMessagesInput) (chatSearchMessagesOutput, error) {
 		win, err := timeutil.ParseWindow(in.Since, "", deps.CurrentTime(), "7d", "")
 		if err != nil {
@@ -189,11 +190,9 @@ func chatService(ctx context.Context, deps Deps) (*chatapi.Service, error) {
 // truncateChatTexts cuts each message text to maxChars (default
 // DefaultMaxChars) and reports whether any was cut.
 func truncateChatTexts(msgs []chat.Message, maxChars int) bool {
-	truncated := false
+	texts := make([]*string, len(msgs))
 	for i := range msgs {
-		var cut bool
-		msgs[i].Text, cut = TruncateText(msgs[i].Text, effectiveMaxChars(maxChars))
-		truncated = truncated || cut
+		texts[i] = &msgs[i].Text
 	}
-	return truncated
+	return truncateEach(maxChars, texts...)
 }

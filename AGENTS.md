@@ -15,7 +15,10 @@ and docs are in English. License: MIT.
 cmd/gwork/main.go             entry point: os.Exit(cli.Execute())
 internal/buildinfo/           Version, Commit, Date, embedded OAuth client, HostedDomain (ldflags)
 internal/config/              config dir (GWORK_CONFIG_DIR | os.UserConfigDir()/gwork), config.json
-internal/output/              Printer (text|json), Table, KeyValues, WriteJSON, Ellipsize
+internal/output/              Printer (text|json), Table, KeyValues, WriteJSON, Ellipsize,
+                              DateTime, SameDay, Person, Bytes (text formatting helpers)
+internal/fsutil/              CheckDest + WriteFile: atomic, no-clobber, 0600 file writes
+                              (downloads; config.WriteFileAtomic uses it for config/tokens)
 internal/timeutil/            Parse / ParseBound / ParseWindow for --from/--to/--since/--until
 internal/auth/                Service + scopes, credentials resolution, Login (loopback+PKCE),
                               TokenStore (keyring + 0600 file), persisting TokenSource,
@@ -30,7 +33,8 @@ docs/                         knowledge base + gintrack backlog (docs/.pmngr)
 ## Layering rules
 
 1. `internal/workspace/*` holds all API logic. It imports
-   `google.golang.org/api/...`, `internal/timeutil` and the standard library.
+   `google.golang.org/api/...`, `internal/timeutil`, `internal/fsutil` and
+   the standard library.
    It **must not** import cobra, the MCP SDK, `internal/cli`,
    `internal/mcpserver` or `internal/output`, and it never prints.
    Functions take `ctx` and either `...option.ClientOption` or an API
@@ -60,8 +64,26 @@ docs/                         knowledge base + gintrack backlog (docs/.pmngr)
 - Times: parse user input with `timeutil.ParseWindow(from, to, now, defFrom, defTo)`;
   take `now` from `app.CurrentTime()` / `deps.CurrentTime()` so tests are
   deterministic.
-- Long text in MCP outputs: `TruncateText(s, effectiveMaxChars(in.MaxChars))`
-  and expose `truncated bool` plus a `max_chars` input.
+- Long text in MCP outputs: expose `truncated bool` plus a `max_chars`
+  input, and use the helpers in `internal/mcpserver/truncate.go`:
+  `TruncateText(s, effectiveMaxChars(in.MaxChars))` for one text,
+  `truncateEach(in.MaxChars, &a, &b, ...)` for independent texts sharing one
+  flag (chat messages, body + HTML), `truncateShared(in.MaxChars, ...)` for
+  one budget spread over related texts (thread bodies).
+- MCP tool descriptions that take time inputs append the shared
+  `timeExpressions` constant (`tools.go`) instead of re-describing the syntax.
+- Text output formatting lives in `internal/output`; do not write local
+  copies in `cli/<svc>.go`:
+  `output.DateTime(t, app.Location())` for timestamps (`YYYY-MM-DD HH:MM`
+  in the App clock's zone, "" for zero), `output.Person(name, email)` for
+  "Name <email>", `output.Bytes(n)` for human sizes, `output.SameDay(a, b)`.
+- Writing files: always `fsutil.CheckDest(out, force)` before any network
+  call, then `fsutil.WriteFile(out, r, force)`: temp file in the same
+  directory, fsync, rename; mode 0600; never replaces an existing file
+  without `--force` (re-checked just before the rename); cleans up on error.
+- Errors: `auth.ClassifyService` keeps the context you wrap around a Google
+  error (`not found: get message 18a: <Google message>`), so wrap with the
+  resource ID and put `%w` last.
 
 ## Core contracts
 
@@ -80,12 +102,20 @@ func NewScopeError(account string, svc Service) error
 func (a *App) ClientOptions(ctx context.Context, svc auth.Service) ([]option.ClientOption, error)
 func (a *App) Print(v any, textFn func(w io.Writer) error) error   // JSON with --json, else textFn
 func (a *App) CurrentTime() time.Time
+func (a *App) Location() *time.Location                             // zone of the App clock
 func (a *App) JSON() bool
 
 // internal/output
 func Table(w io.Writer, headers []string, rows [][]string) error
 func KeyValues(w io.Writer, pairs ...string) error
 func Ellipsize(s string, n int) string
+func DateTime(t time.Time, loc *time.Location) string
+func Person(name, email string) string
+func Bytes(n int64) string
+
+// internal/fsutil
+func CheckDest(path string, force bool) error
+func WriteFile(path string, r io.Reader, force bool) (int64, error)
 
 // internal/mcpserver
 type Deps struct { Provider auth.ClientProvider; Logger *slog.Logger; Timeout time.Duration; Now func() time.Time; ... }
@@ -93,6 +123,8 @@ func (d Deps) ClientOptions(ctx context.Context, svc auth.Service) ([]option.Cli
 func (d Deps) CurrentTime() time.Time
 func addReadOnlyTool[In, Out any](s *mcp.Server, deps Deps, svc auth.Service, tool *mcp.Tool, fn ToolFunc[In, Out])
 func TruncateText(s string, maxChars int) (string, bool)
+func truncateEach(maxChars int, texts ...*string) bool
+func truncateShared(maxChars int, texts ...*string) bool
 
 // internal/workspace/<svc>
 func New(ctx context.Context, opts ...option.ClientOption) (*<api>.Service, error)

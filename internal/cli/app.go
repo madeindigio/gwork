@@ -72,6 +72,12 @@ func (a *App) CurrentTime() time.Time {
 	return time.Now()
 }
 
+// Location returns the time zone of the App clock, used to render
+// timestamps in text output.
+func (a *App) Location() *time.Location {
+	return a.CurrentTime().Location()
+}
+
 // Format returns the selected output format (--json wins over --output).
 func (a *App) Format() (output.Format, error) {
 	if a.Flags.JSON {

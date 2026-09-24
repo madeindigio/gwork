@@ -24,7 +24,7 @@ func TestHTMLToText(t *testing.T) {
 		{"pre keeps layout", "<pre>  x\n    y</pre>", "x\n    y"},
 		{"inline elements", "<p>a <b>bold</b><i>it</i> word</p>", "a boldit word"},
 		{"nbsp", "a&nbsp;&nbsp;b", "a b"},
-		{"zero width", "a‌​b", "ab"},
+		{"zero width", "a\u200c\u200bb", "ab"},
 		{"blank lines collapsed", "<p>a</p><br><br><br><p>b</p>", "a\n\nb"},
 	}
 	for _, tt := range tests {

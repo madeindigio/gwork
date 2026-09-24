@@ -31,3 +31,41 @@ func effectiveMaxChars(n int) int {
 	}
 	return n
 }
+
+// truncateEach cuts every text to maxChars characters (0 or less means
+// DefaultMaxChars) and reports whether any was cut. It is used for lists
+// of independent texts (chat messages, a message's body and HTML) that
+// share a single truncated flag.
+func truncateEach(maxChars int, texts ...*string) bool {
+	limit := effectiveMaxChars(maxChars)
+	truncated := false
+	for _, t := range texts {
+		var cut bool
+		*t, cut = TruncateText(*t, limit)
+		truncated = truncated || cut
+	}
+	return truncated
+}
+
+// truncateShared spends a single budget of characters on texts in order
+// (0 or less means DefaultMaxChars): the text that exceeds the remaining
+// budget is cut and the following ones are emptied. It reports whether
+// anything was cut. It is used when the total size of related texts (the
+// bodies of a thread) must stay bounded.
+func truncateShared(budget int, texts ...*string) bool {
+	budget = effectiveMaxChars(budget)
+	truncated := false
+	for _, t := range texts {
+		if budget <= 0 {
+			if *t != "" {
+				*t, truncated = "", true
+			}
+			continue
+		}
+		var cut bool
+		*t, cut = TruncateText(*t, budget)
+		truncated = truncated || cut
+		budget -= utf8.RuneCountInString(*t)
+	}
+	return truncated
+}

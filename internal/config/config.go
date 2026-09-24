@@ -6,6 +6,7 @@
 package config
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,6 +15,8 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+
+	"github.com/digio/gwork-cli/internal/fsutil"
 )
 
 // EnvConfigDir is the environment variable overriding the config directory.
@@ -74,37 +77,18 @@ func Save(dir string, c *Config) error {
 	if err != nil {
 		return fmt.Errorf("encode config: %w", err)
 	}
-	return WriteFileAtomic(filepath.Join(dir, FileName), append(data, '\n'), 0o600)
+	return WriteFileAtomic(filepath.Join(dir, FileName), append(data, '\n'))
 }
 
-// WriteFileAtomic writes data to path through a temporary file in the same
-// directory followed by a rename, creating the parent directory with 0700.
-func WriteFileAtomic(path string, data []byte, perm os.FileMode) error {
-	dir := filepath.Dir(path)
-	if err := EnsureDir(dir); err != nil {
+// WriteFileAtomic writes data to path with mode 0600, creating the parent
+// directory with 0700. The write is atomic and replaces an existing file
+// (see fsutil.WriteFile).
+func WriteFileAtomic(path string, data []byte) error {
+	if err := EnsureDir(filepath.Dir(path)); err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+".tmp-*")
-	if err != nil {
-		return fmt.Errorf("create temp file: %w", err)
-	}
-	tmpName := tmp.Name()
-	defer func() { _ = os.Remove(tmpName) }() // no-op after a successful rename
-	if err := tmp.Chmod(perm); err != nil {
-		_ = tmp.Close()
-		return fmt.Errorf("chmod %s: %w", tmpName, err)
-	}
-	if _, err := tmp.Write(data); err != nil {
-		_ = tmp.Close()
-		return fmt.Errorf("write %s: %w", tmpName, err)
-	}
-	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("close %s: %w", tmpName, err)
-	}
-	if err := os.Rename(tmpName, path); err != nil {
-		return fmt.Errorf("rename to %s: %w", path, err)
-	}
-	return nil
+	_, err := fsutil.WriteFile(path, bytes.NewReader(data), true)
+	return err
 }
 
 // NormalizeEmail lower-cases and trims an email address.

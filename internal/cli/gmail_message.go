@@ -5,6 +5,7 @@ import (
 	"io"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -30,7 +31,7 @@ func newGmailGetCmd(app *App) *cobra.Command {
 				return err
 			}
 			return app.Print(msg, func(w io.Writer) error {
-				return writeGmailMessage(w, msg, rawHTML)
+				return writeGmailMessage(w, msg, rawHTML, app.Location())
 			})
 		},
 	}
@@ -58,7 +59,7 @@ func newGmailThreadCmd(app *App) *cobra.Command {
 					if _, err := fmt.Fprintf(w, "=== Message %d/%d ===\n", i+1, len(th.Messages)); err != nil {
 						return err
 					}
-					if err := writeGmailMessage(w, &th.Messages[i], false); err != nil {
+					if err := writeGmailMessage(w, &th.Messages[i], false, app.Location()); err != nil {
 						return err
 					}
 					if i < len(th.Messages)-1 {
@@ -74,8 +75,8 @@ func newGmailThreadCmd(app *App) *cobra.Command {
 }
 
 // writeGmailMessage renders a message as headers, a blank line, the body
-// and the attachment list.
-func writeGmailMessage(w io.Writer, m *gmail.Message, rawHTML bool) error {
+// and the attachment list. Dates are shown in loc.
+func writeGmailMessage(w io.Writer, m *gmail.Message, rawHTML bool, loc *time.Location) error {
 	if err := output.KeyValues(w,
 		"ID", m.ID,
 		"Thread", m.ThreadID,
@@ -83,7 +84,7 @@ func writeGmailMessage(w io.Writer, m *gmail.Message, rawHTML bool) error {
 		"To", m.To,
 		"Cc", m.Cc,
 		"Subject", m.Subject,
-		"Date", formatGmailDate(m.Date),
+		"Date", output.DateTime(m.Date, loc),
 		"Labels", strings.Join(m.Labels, ", "),
 	); err != nil {
 		return err
