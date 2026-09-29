@@ -119,6 +119,9 @@ func (p EventPatch) Validate() error {
 	if p.isEmpty() {
 		return errors.New("nothing to update: no changes given")
 	}
+	if p.Summary != nil && strings.TrimSpace(*p.Summary) == "" {
+		return errors.New("summary cannot be empty")
+	}
 	if _, err := normalizeEmails(p.AddAttendees); err != nil {
 		return err
 	}
@@ -403,10 +406,20 @@ func (p EventPatch) applyTimes(body, cur *calendarapi.Event) error {
 	if p.AllDay != nil {
 		allDay = *p.AllDay
 	}
+	if curAllDay && !allDay && p.Start == nil {
+		return errors.New("start is required when converting an all-day event to a timed one")
+	}
 	start, end := curStart, curEnd
 	if p.Start != nil {
 		start = *p.Start
-		end = start.Add(curEnd.Sub(curStart))
+		if allDay {
+			// Keep the length in whole calendar days: an absolute duration
+			// would drift across DST changes.
+			days := int(dateOf(curEnd).Sub(dateOf(curStart)) / (24 * time.Hour))
+			end = dateOf(start).AddDate(0, 0, days)
+		} else {
+			end = start.Add(curEnd.Sub(curStart))
+		}
 	}
 	if p.End != nil {
 		end = *p.End
