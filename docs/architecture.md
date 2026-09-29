@@ -258,7 +258,9 @@ CLI write commands only need step 1: the user is at the keyboard.
 
 Gmail tools that send mail are registered only with `gwork mcp --allow-send`,
 which requires `gmail` in `--allow-write` (otherwise an error at startup).
-Without it an agent can create drafts but not send them. There are no
+Without it an agent can create drafts but not send them. Calendar and Chat
+have no equivalent switch: `--allow-write calendar` already lets an agent
+email invitations and `--allow-write chat` post messages to other people. There are no
 recipient or domain restrictions.
 
 ### CLI write commands

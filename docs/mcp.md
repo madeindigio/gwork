@@ -215,7 +215,10 @@ Write tools are registered only when **both** hold:
 2. the server was started with `--allow-write` for that service, e.g.
    `gwork mcp --allow-write gmail,calendar`.
 
-Tools that send email additionally need `--allow-send`. Write tools are
+Tools that send email additionally need `--allow-send`. There is no such
+extra switch for Calendar and Chat: `--allow-write calendar` lets the agent
+invite people (Google emails them unless `send_updates` is `none`) and
+`--allow-write chat` lets it post messages that others read. Write tools are
 annotated `readOnlyHint: false` with `destructiveHint`, `idempotentHint` and
 `openWorldHint` so clients can ask you before running them, and every call is
 logged on stderr (tool, account, service, duration, result; never the content).
