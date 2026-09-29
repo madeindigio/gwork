@@ -36,6 +36,7 @@ type accountInfo struct {
 	Account         string         `json:"account"`
 	Default         bool           `json:"default"`
 	Services        []auth.Service `json:"services"`
+	WriteServices   []auth.Service `json:"write_services"`
 	Scopes          []string       `json:"scopes,omitempty"`
 	Storage         string         `json:"storage,omitempty"`
 	TokenExpiry     *time.Time     `json:"token_expiry,omitempty"`
@@ -45,14 +46,18 @@ type accountInfo struct {
 
 func newAccountInfo(st *auth.StoredToken, cfg *config.Config, storage string) accountInfo {
 	info := accountInfo{
-		Account:  config.NormalizeEmail(st.Email),
-		Default:  cfg.DefaultAccount == config.NormalizeEmail(st.Email),
-		Services: st.Services(),
-		Scopes:   st.Scopes,
-		Storage:  storage,
+		Account:       config.NormalizeEmail(st.Email),
+		Default:       cfg.DefaultAccount == config.NormalizeEmail(st.Email),
+		Services:      st.Services(),
+		WriteServices: st.WriteServices(),
+		Scopes:        st.Scopes,
+		Storage:       storage,
 	}
 	if info.Services == nil {
 		info.Services = []auth.Service{}
+	}
+	if info.WriteServices == nil {
+		info.WriteServices = []auth.Service{}
 	}
 	if st.Token != nil {
 		info.HasRefreshToken = st.Token.RefreshToken != ""
@@ -76,21 +81,31 @@ func hostedDomain() string {
 }
 
 func newAuthLoginCmd(a *App) *cobra.Command {
-	var services string
+	var services, write string
 	var noBrowser bool
 	cmd := &cobra.Command{
 		Use:   "login",
 		Short: "Log in with a Google account (opens the browser)",
 		Long: "Log in with a Google account using OAuth (loopback redirect + PKCE) and store\n" +
-			"the token in the OS keyring. Only read-only scopes are requested.\n\n" +
-			"Run it again with --services to grant more services later.",
-		Example:     "  gwork auth login\n  gwork auth login --services gmail,calendar",
+			"the token in the OS keyring. Only read-only scopes are requested unless\n" +
+			"--write is given.\n\n" +
+			"--write requests write scopes (gmail.modify, calendar.events,\n" +
+			"chat.messages.create) in addition to the read scopes, for the listed\n" +
+			"services (implying their read access). Drive is not writable. Write\n" +
+			"commands and MCP write tools (gwork mcp --allow-write) need them.\n\n" +
+			"Run it again with --services or --write to grant more later.",
+		Example: "  gwork auth login\n  gwork auth login --services gmail,calendar\n" +
+			"  gwork auth login --services gmail,calendar --write gmail,calendar",
 		Args:        cobra.NoArgs,
 		Annotations: map[string]string{annotationNoTimeout: "true"},
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			svcs, err := auth.ParseServices(services)
 			if err != nil {
 				return err
+			}
+			writeSvcs, err := auth.ParseWriteServices(write)
+			if err != nil {
+				return fmt.Errorf("--write: %w", err)
 			}
 			dir, err := a.ConfigDir()
 			if err != nil {
@@ -109,15 +124,16 @@ func newAuthLoginCmd(a *App) *cobra.Command {
 				open = nil
 			}
 			st, err := auth.Login(cmd.Context(), auth.LoginOptions{
-				Credentials:  creds,
-				Services:     svcs,
-				HostedDomain: hostedDomain(),
-				LoginHint:    a.Flags.Account,
-				Timeout:      timeout,
-				OpenBrowser:  open,
-				Prompt:       a.Err,
-				Endpoint:     a.OAuthEndpoint,
-				UserinfoURL:  a.UserinfoURL,
+				Credentials:   creds,
+				Services:      svcs,
+				WriteServices: writeSvcs,
+				HostedDomain:  hostedDomain(),
+				LoginHint:     a.Flags.Account,
+				Timeout:       timeout,
+				OpenBrowser:   open,
+				Prompt:        a.Err,
+				Endpoint:      a.OAuthEndpoint,
+				UserinfoURL:   a.UserinfoURL,
 			})
 			if err != nil {
 				return err
@@ -136,8 +152,12 @@ func newAuthLoginCmd(a *App) *cobra.Command {
 			}
 			info := newAccountInfo(st, cfg, store.Backend(st.Email))
 			return a.Print(info, func(w io.Writer) error {
-				_, err := fmt.Fprintf(w, "Logged in as %s (services: %s; stored in %s)\n",
-					info.Account, joinOrNone(info.Services), info.Storage)
+				write := ""
+				if len(info.WriteServices) > 0 {
+					write = "; write: " + auth.JoinServices(info.WriteServices)
+				}
+				_, err := fmt.Fprintf(w, "Logged in as %s (services: %s%s; stored in %s)\n",
+					info.Account, joinOrNone(info.Services), write, info.Storage)
 				if err == nil && !info.Default {
 					_, err = fmt.Fprintf(w, "Default account is %s; switch with: gwork auth use %s\n", cfg.DefaultAccount, info.Account)
 				}
@@ -146,6 +166,7 @@ func newAuthLoginCmd(a *App) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&services, "services", "all", "comma separated services to grant: gmail,calendar,drive,chat or all")
+	cmd.Flags().StringVar(&write, "write", "", "comma separated services to also grant write access to: gmail,calendar,chat or all (default none)")
 	cmd.Flags().BoolVar(&noBrowser, "no-browser", false, "do not open the browser; only print the URL")
 	return cmd
 }
@@ -205,6 +226,7 @@ func newAuthStatusCmd(a *App) *cobra.Command {
 					"Account", info.Account,
 					"Default", fmt.Sprint(info.Default),
 					"Services", joinOrNone(info.Services),
+					"Write", joinOrNone(info.WriteServices),
 					"Storage", info.Storage,
 					"Refresh token", fmt.Sprint(info.HasRefreshToken),
 					"Access expiry", expiry,
@@ -235,7 +257,7 @@ func newAuthListCmd(a *App) *cobra.Command {
 			for _, email := range cfg.Accounts {
 				st, err := store.Load(email)
 				if err != nil {
-					accounts = append(accounts, accountInfo{Account: email, Default: cfg.DefaultAccount == email, Services: []auth.Service{}})
+					accounts = append(accounts, accountInfo{Account: email, Default: cfg.DefaultAccount == email, Services: []auth.Service{}, WriteServices: []auth.Service{}})
 					continue
 				}
 				info := newAccountInfo(st, cfg, store.Backend(email))
@@ -257,9 +279,9 @@ func newAuthListCmd(a *App) *cobra.Command {
 					if storage == "" {
 						storage = "missing"
 					}
-					rows = append(rows, []string{def, acc.Account, joinOrNone(acc.Services), storage})
+					rows = append(rows, []string{def, acc.Account, joinOrNone(acc.Services), joinOrNone(acc.WriteServices), storage})
 				}
-				return output.Table(w, []string{"DEFAULT", "ACCOUNT", "SERVICES", "STORAGE"}, rows)
+				return output.Table(w, []string{"DEFAULT", "ACCOUNT", "SERVICES", "WRITE", "STORAGE"}, rows)
 			})
 		},
 	}

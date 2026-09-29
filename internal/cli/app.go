@@ -42,6 +42,12 @@ type App struct {
 	// Flags are the parsed global flags.
 	Flags GlobalFlags
 
+	// In is the standard input, read by confirmation prompts.
+	In io.Reader
+	// IsTerminal reports whether In is an interactive terminal; tests
+	// override it. Nil means not interactive.
+	IsTerminal func() bool
+
 	// Now returns the current time; tests may override it.
 	Now func() time.Time
 	// OpenBrowser opens a URL for auth login; nil disables it.
@@ -62,6 +68,13 @@ type App struct {
 // NewApp returns an App writing results to out and diagnostics to errw.
 func NewApp(out, errw io.Writer) *App {
 	return &App{Out: out, Err: errw, Now: time.Now}
+}
+
+// stdinIsTerminal reports whether os.Stdin is an interactive terminal (a
+// character device) rather than a pipe or a file.
+func stdinIsTerminal() bool {
+	fi, err := os.Stdin.Stat()
+	return err == nil && fi.Mode()&os.ModeCharDevice != 0
 }
 
 // CurrentTime returns the App clock's current time.

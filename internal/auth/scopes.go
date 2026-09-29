@@ -30,6 +30,11 @@ const (
 	ScopeChatSpacesReadonly = "https://www.googleapis.com/auth/chat.spaces.readonly"
 	ScopeChatMessagesRO     = "https://www.googleapis.com/auth/chat.messages.readonly"
 	ScopeChatMembershipsRO  = "https://www.googleapis.com/auth/chat.memberships.readonly"
+
+	// Write scopes, requested only with "gwork auth login --write".
+	ScopeGmailModify        = "https://www.googleapis.com/auth/gmail.modify"
+	ScopeCalendarEvents     = "https://www.googleapis.com/auth/calendar.events"
+	ScopeChatMessagesCreate = "https://www.googleapis.com/auth/chat.messages.create"
 )
 
 // BaseScopes are requested on every login to discover the account email.
@@ -40,6 +45,28 @@ var serviceScopes = map[Service][]string{
 	Calendar: {ScopeCalendarReadonly},
 	Drive:    {ScopeDriveReadonly},
 	Chat:     {ScopeChatSpacesReadonly, ScopeChatMessagesRO, ScopeChatMembershipsRO},
+}
+
+// WritableServices lists the services that support write operations.
+var WritableServices = []Service{Gmail, Calendar, Chat}
+
+// writeScopes holds the scopes needed in addition to the read scopes.
+var writeScopes = map[Service][]string{
+	Gmail:    {ScopeGmailModify},
+	Calendar: {ScopeCalendarEvents},
+	Chat:     {ScopeChatMessagesCreate},
+}
+
+// Writable reports whether the service supports write operations.
+func (s Service) Writable() bool {
+	_, ok := writeScopes[s]
+	return ok
+}
+
+// WriteScopes returns the write OAuth scopes of the service (in addition to
+// its read scopes), or nil when the service is not writable.
+func (s Service) WriteScopes() []string {
+	return slices.Clone(writeScopes[s])
 }
 
 // Valid reports whether s is a supported service.
@@ -126,6 +153,86 @@ func GrantedServices(granted []string) []Service {
 	var out []Service
 	for _, svc := range AllServices {
 		if len(MissingScopes(granted, svc)) == 0 {
+			out = append(out, svc)
+		}
+	}
+	return out
+}
+
+// ParseWriteServices parses the value of --write / --allow-write: a comma
+// separated list of writable services. "" and "none" select nothing, "all"
+// selects WritableServices. Duplicates are removed and the result keeps the
+// WritableServices order. Non-writable services (drive) are an error.
+func ParseWriteServices(s string) ([]Service, error) {
+	s = strings.TrimSpace(s)
+	if s == "" || strings.EqualFold(s, "none") {
+		return []Service{}, nil
+	}
+	seen := map[Service]bool{}
+	for _, part := range strings.Split(s, ",") {
+		name := Service(strings.ToLower(strings.TrimSpace(part)))
+		switch {
+		case name == "":
+			continue
+		case name == "all":
+			return slices.Clone(WritableServices), nil
+		case name == "none":
+			continue
+		case !name.Valid():
+			return nil, fmt.Errorf("unknown service %q (valid for write: %s)", name, JoinServices(WritableServices))
+		case !name.Writable():
+			return nil, fmt.Errorf("service %q does not support write operations (valid for write: %s)", name, JoinServices(WritableServices))
+		}
+		seen[name] = true
+	}
+	out := []Service{}
+	for _, svc := range WritableServices {
+		if seen[svc] {
+			out = append(out, svc)
+		}
+	}
+	return out, nil
+}
+
+// ScopesForWrite returns the base scopes, the read scopes of read and write
+// services, and the write scopes of write services, without duplicates.
+func ScopesForWrite(read, write []Service) []string {
+	svcs := slices.Clone(read)
+	for _, w := range write {
+		if !slices.Contains(svcs, w) {
+			svcs = append(svcs, w)
+		}
+	}
+	out := ScopesFor(svcs)
+	for _, w := range write {
+		for _, sc := range writeScopes[w] {
+			if !slices.Contains(out, sc) {
+				out = append(out, sc)
+			}
+		}
+	}
+	return out
+}
+
+// MissingWriteScopes returns the scopes required to write to svc (its read
+// scopes plus its write scopes) that are not in granted. A non-writable
+// service yields its read scopes only.
+func MissingWriteScopes(granted []string, svc Service) []string {
+	missing := MissingScopes(granted, svc)
+	for _, sc := range writeScopes[svc] {
+		if !slices.Contains(granted, sc) {
+			missing = append(missing, sc)
+		}
+	}
+	return missing
+}
+
+// WriteGrantedServices returns the writable services whose read and write
+// scopes are all in granted.
+func WriteGrantedServices(granted []string) []Service {
+	out := []Service{}
+	for _, svc := range WritableServices {
+		if len(MissingWriteScopes(granted, svc)) == 0 {
 			out = append(out, svc)
 		}
 	}

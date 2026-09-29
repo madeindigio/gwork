@@ -85,7 +85,12 @@ type FakeProvider struct {
 	// Services are the granted services; ClientOptions fails for others
 	// with the same error as the real provider.
 	Services []auth.Service
-	// Options are returned by ClientOptions.
+	// WriteServices are the services granted write access (in addition to
+	// being in Services); WriteClientOptions fails for others with the same
+	// error as the real provider. NewFakeProvider grants every writable
+	// service; use GrantWrite to restrict or clear it.
+	WriteServices []auth.Service
+	// Options are returned by ClientOptions and WriteClientOptions.
 	Options []option.ClientOption
 	// Err, when set, is returned by ClientOptions.
 	Err error
@@ -100,7 +105,43 @@ func NewFakeProvider(t testing.TB, h http.Handler, services ...auth.Service) *Fa
 	if len(services) == 0 {
 		services = slices.Clone(auth.AllServices)
 	}
-	return &FakeProvider{Email: "tester@digio.es", Services: services, Options: FakeGoogle(t, h)}
+	return &FakeProvider{
+		Email:         "tester@digio.es",
+		Services:      services,
+		WriteServices: slices.Clone(auth.WritableServices),
+		Options:       FakeGoogle(t, h),
+	}
+}
+
+// GrantWrite replaces the write-granted services (none when called without
+// arguments) and returns f. A service is write-granted only if it is also in
+// Services, like the real provider.
+func (f *FakeProvider) GrantWrite(services ...auth.Service) *FakeProvider {
+	f.WriteServices = slices.Clone(services)
+	return f
+}
+
+// WriteClientOptions implements auth.ClientProvider.
+func (f *FakeProvider) WriteClientOptions(_ context.Context, svc auth.Service) ([]option.ClientOption, error) {
+	if f.Err != nil {
+		return nil, f.Err
+	}
+	if !slices.Contains(f.Services, svc) || !slices.Contains(f.WriteServices, svc) {
+		return nil, auth.NewWriteScopeError(f.Email, svc)
+	}
+	return slices.Clone(f.Options), nil
+}
+
+// WriteGrantedServices implements auth.ClientProvider: the writable services
+// that are both read- and write-granted.
+func (f *FakeProvider) WriteGrantedServices() []auth.Service {
+	out := []auth.Service{}
+	for _, svc := range auth.WritableServices {
+		if slices.Contains(f.Services, svc) && slices.Contains(f.WriteServices, svc) {
+			out = append(out, svc)
+		}
+	}
+	return out
 }
 
 // ClientOptions implements auth.ClientProvider.

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"slices"
 	"testing"
 
 	"google.golang.org/api/googleapi"
@@ -100,5 +101,22 @@ func TestFakeProviderScopeCheck(t *testing.T) {
 	}
 	if p.Account() != "tester@digio.es" {
 		t.Fatalf("account %q", p.Account())
+	}
+}
+
+func TestFakeProviderWriteGrants(t *testing.T) {
+	p := testutil.NewFakeProvider(t, http.NotFoundHandler(), auth.Gmail, auth.Chat)
+	if got := p.WriteGrantedServices(); !slices.Equal(got, []auth.Service{auth.Gmail, auth.Chat}) {
+		t.Fatalf("default write grants %v", got)
+	}
+	p.GrantWrite(auth.Calendar, auth.Gmail)
+	if got := p.WriteGrantedServices(); !slices.Equal(got, []auth.Service{auth.Gmail}) {
+		t.Fatalf("write grants %v (calendar is not read-granted)", got)
+	}
+	if _, err := p.WriteClientOptions(context.Background(), auth.Gmail); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.WriteClientOptions(context.Background(), auth.Chat); !errors.Is(err, auth.ErrInsufficientScope) {
+		t.Fatalf("err %v", err)
 	}
 }

@@ -29,6 +29,8 @@ func Execute() int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 	app := NewApp(os.Stdout, os.Stderr)
+	app.In = os.Stdin
+	app.IsTerminal = stdinIsTerminal
 	app.OpenBrowser = func(url string) error {
 		// pkg/browser writes the launcher's output to stdout by default,
 		// which would corrupt --json output.
@@ -78,9 +80,11 @@ func (a *App) explain(cmd *cobra.Command, err error) error {
 func NewRootCmd(a *App) *cobra.Command {
 	root := &cobra.Command{
 		Use:   "gwork",
-		Short: "Read-only access to Gmail, Drive, Chat and Calendar",
-		Long: "gwork gives humans and AI agents read-only access to Google Workspace\n" +
-			"(Gmail, Google Drive, Google Chat and Google Calendar), as a CLI and as an MCP server.",
+		Short: "Access Gmail, Drive, Chat and Calendar (read-only by default)",
+		Long: "gwork gives humans and AI agents access to Google Workspace (Gmail, Google\n" +
+			"Drive, Google Chat and Google Calendar), as a CLI and as an MCP server.\n" +
+			"It is read-only unless write access is explicitly granted (gwork auth login\n" +
+			"--write) and, for MCP, enabled (gwork mcp --allow-write).",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {

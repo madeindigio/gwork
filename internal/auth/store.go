@@ -50,6 +50,10 @@ func (s *StoredToken) stamp() time.Time {
 // Services returns the services fully covered by the stored scopes.
 func (s *StoredToken) Services() []Service { return GrantedServices(s.Scopes) }
 
+// WriteServices returns the services for which both the read and the write
+// scopes are stored.
+func (s *StoredToken) WriteServices() []Service { return WriteGrantedServices(s.Scopes) }
+
 // TokenStore persists tokens keyed by account email.
 type TokenStore interface {
 	Load(email string) (*StoredToken, error)

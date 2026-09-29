@@ -5,8 +5,9 @@ Guide for humans and AI agents working on `gwork`. The design spec is
 explains how the code is organized and how to extend it.
 
 `gwork` is a single Go binary (`github.com/madeindigio/gwork`, Go 1.26) giving
-**read-only** access to Gmail, Google Drive, Google Chat and Google Calendar,
-as a cobra CLI and as an MCP server (`gwork mcp`, stdio). All code, comments
+**read-only by default** access to Gmail, Google Drive, Google Chat and Google Calendar,
+as a cobra CLI and as an MCP server (`gwork mcp`, stdio). Write operations
+(Gmail, Calendar, Chat) exist but are opt-in. All code, comments
 and docs are in English. License: MIT.
 
 ## Layout
@@ -60,7 +61,13 @@ docs/                         knowledge base + gintrack backlog (docs/.pmngr)
 - JSON: structs returned by `workspace/*` use **snake_case** JSON tags
   (`json:"thread_id"`), `omitempty` for optional fields, `time.Time` for
   timestamps. Return empty slices, not nil, so JSON shows `[]`.
-- Read-only only: never request or use write scopes.
+- Read-only by default. Write scopes (`gmail.modify`, `calendar.events`,
+  `chat.messages.create`) are requested only by `gwork auth login --write`,
+  and MCP write tools are registered only with `gwork mcp --allow-write`
+  (sending mail also needs `--allow-send`). Drive is never writable. Read
+  paths must use `ClientOptions`; only write paths use `WriteClientOptions`.
+  Write code lives in `workspace/<svc>/` (functions taking `ctx` and options),
+  `cli/<svc>_write.go` and `mcpserver/<svc>_write.go`.
 - Stdout carries results (CLI) or protocol messages (MCP) only. Warnings,
   prompts and logs go to stderr (`app.Err`, `slog`).
 - Times: parse user input with `timeutil.ParseWindow(from, to, now, defFrom, defTo)`;
@@ -94,18 +101,35 @@ docs/                         knowledge base + gintrack backlog (docs/.pmngr)
 type Service string                  // auth.Gmail, auth.Calendar, auth.Drive, auth.Chat
 type ClientProvider interface {
     ClientOptions(ctx context.Context, svc Service) ([]option.ClientOption, error)
+    WriteClientOptions(ctx context.Context, svc Service) ([]option.ClientOption, error) // read+write scopes
     Account() string
     GrantedServices() []Service
+    WriteGrantedServices() []Service
 }
 func ClassifyService(err error, svc Service) error
+func ClassifyWrite(err error, svc Service) error   // like ClassifyService, write login hint
 func NewScopeError(account string, svc Service) error
+func NewWriteScopeError(account string, svc Service) error
+func ParseWriteServices(s string) ([]Service, error)  // "", "none" -> empty; "all"; drive is an error
+func (s Service) Writable() bool
+func (s Service) WriteScopes() []string
+func MissingWriteScopes(granted []string, svc Service) []string
+func WriteGrantedServices(granted []string) []Service // read AND write scopes granted
 
 // internal/cli
 func (a *App) ClientOptions(ctx context.Context, svc auth.Service) ([]option.ClientOption, error)
 func (a *App) Print(v any, textFn func(w io.Writer) error) error   // JSON with --json, else textFn
+func (a *App) WriteClientOptions(ctx context.Context, svc auth.Service) ([]option.ClientOption, error)
 func (a *App) CurrentTime() time.Time
 func (a *App) Location() *time.Location                             // zone of the App clock
 func (a *App) JSON() bool
+
+// internal/cli (write.go)
+type writeFlags struct{ Yes, DryRun bool }
+func addWriteFlags(cmd *cobra.Command, f *writeFlags)          // --yes/-y, --dry-run
+func (a *App) confirmWrite(f writeFlags, summary string) error // prompt on stderr, needs a TTY or --yes
+func (a *App) printDryRun(v any) error
+func classifyWrite(err error, svc auth.Service) error          // auth.ClassifyWrite
 
 // internal/output
 func Table(w io.Writer, headers []string, rows [][]string) error
@@ -120,10 +144,13 @@ func CheckDest(path string, force bool) error
 func WriteFile(path string, r io.Reader, force bool) (int64, error)
 
 // internal/mcpserver
-type Deps struct { Provider auth.ClientProvider; Logger *slog.Logger; Timeout time.Duration; Now func() time.Time; ... }
+type Deps struct { Provider auth.ClientProvider; Logger *slog.Logger; Timeout time.Duration; Now func() time.Time; Write WriteOptions; ... }
+type WriteOptions struct { Services []auth.Service; AllowSend bool }   // --allow-write, --allow-send
 func (d Deps) ClientOptions(ctx context.Context, svc auth.Service) ([]option.ClientOption, error)
+func (d Deps) WriteClientOptions(ctx context.Context, svc auth.Service) ([]option.ClientOption, error)
 func (d Deps) CurrentTime() time.Time
 func addReadOnlyTool[In, Out any](s *mcp.Server, deps Deps, svc auth.Service, tool *mcp.Tool, fn ToolFunc[In, Out])
+func addWriteTool[In, Out any](s *mcp.Server, deps Deps, svc auth.Service, tool *mcp.Tool, fn ToolFunc[In, Out])
 func TruncateText(s string, maxChars int) (string, bool)
 func truncateEach(maxChars int, texts ...*string) bool
 func truncateShared(maxChars int, texts ...*string) bool
@@ -215,6 +242,86 @@ func registerGmail(s *mcp.Server, deps Deps) {
   inferred schema.
 - `addReadOnlyTool` sets `readOnlyHint`, applies the per-call timeout,
   classifies errors with the service and returns them as tool errors.
+
+## How to add a write command
+
+Put it in `internal/cli/<svc>_write.go` and add it to the group in
+`new<Svc>Cmd`. Use `app.WriteClientOptions` (never `ClientOptions`), register
+`--yes`/`--dry-run` with `addWriteFlags`, and return errors of write calls
+through `classifyWrite` so a missing scope shows the write login hint.
+
+```go
+func newGmailTrashCmd(app *App) *cobra.Command {
+    var wf writeFlags
+    cmd := &cobra.Command{
+        Use:   "trash <message-id>",
+        Short: "Move a message to the trash",
+        Args:  cobra.ExactArgs(1),
+        RunE: func(cmd *cobra.Command, args []string) error {
+            ctx := cmd.Context()
+            req := map[string]string{"action": "trash", "message_id": args[0]}
+            if wf.DryRun {
+                return app.printDryRun(req) // before any network call
+            }
+            if err := app.confirmWrite(wf, "Move message "+args[0]+" to the trash."); err != nil {
+                return err
+            }
+            opts, err := app.WriteClientOptions(ctx, auth.Gmail)
+            if err != nil {
+                return err
+            }
+            res, err := gmail.Trash(ctx, args[0], opts...)
+            if err != nil {
+                return classifyWrite(err, auth.Gmail)
+            }
+            return app.Print(res, func(w io.Writer) error {
+                _, err := fmt.Fprintf(w, "Trashed %s\n", res.ID)
+                return err
+            })
+        },
+    }
+    addWriteFlags(cmd, &wf)
+    return cmd
+}
+```
+
+## How to add a write MCP tool
+
+Put it in `internal/mcpserver/<svc>_write.go` inside `register<Svc>Write`
+(already wired in `writeRegistrars`; it runs only when the service is in
+`--allow-write` and write-granted). Use `addWriteTool` with the annotations
+that describe the tool (`DestructiveHint` is a `*bool`; unset means
+destructive, so set it to false for additive tools), and `deps.WriteClientOptions`.
+Tools that send mail must be registered only if `deps.Write.AllowSend`.
+`addWriteTool` classifies errors with the write hint and writes the audit log
+line (no content), so do not log bodies yourself.
+
+```go
+func registerGmailWrite(s *mcp.Server, deps Deps) {
+    notDestructive := false
+    addWriteTool(s, deps, auth.Gmail, &mcp.Tool{
+        Name:        "gmail_create_draft",
+        Description: "Create a draft. Nothing is sent.",
+        Annotations: &mcp.ToolAnnotations{DestructiveHint: &notDestructive},
+    }, func(ctx context.Context, in gmailCreateDraftInput) (gmailCreateDraftOutput, error) {
+        opts, err := deps.WriteClientOptions(ctx, auth.Gmail)
+        if err != nil {
+            return gmailCreateDraftOutput{}, err
+        }
+        d, err := gmail.CreateDraft(ctx, in.toDraft(), opts...)
+        return gmailCreateDraftOutput{Draft: d}, err
+    })
+    if deps.Write.AllowSend {
+        // register gmail_send_message with OpenWorldHint...
+    }
+}
+```
+
+Tests: `testutil.NewFakeProvider` grants every write service;
+`.GrantWrite(auth.Chat)` restricts write grants (`.GrantWrite()` clears them).
+Build sessions with `deps := testDeps(t, mux); deps.Write = WriteOptions{Services: []auth.Service{auth.Gmail}, AllowSend: true}`
+then `newTestSession(t, deps, auth.Gmail)`. CLI tests use `app.In`/`app.IsTerminal`
+to drive confirmations.
 
 ## How to add a service
 

@@ -113,6 +113,25 @@ func NewScopeError(account string, svc Service) error {
 	}
 }
 
+// WriteLoginHint returns the command that grants write access to svc.
+func WriteLoginHint(svc Service) string {
+	return fmt.Sprintf("run: gwork auth login --services %s --write %s", svc, svc)
+}
+
+// NewWriteScopeError reports that the account lacks the read or write scopes
+// needed to write to svc.
+func NewWriteScopeError(account string, svc Service) error {
+	who := "the current account"
+	if account != "" {
+		who = account
+	}
+	return &Error{
+		Kind:    ErrInsufficientScope,
+		Message: fmt.Sprintf("%s has not granted write access to %s", who, svc),
+		Hint:    WriteLoginHint(svc),
+	}
+}
+
 // Classify maps OAuth and Google API errors to *Error values with hints.
 // It is equivalent to ClassifyService(err, "").
 func Classify(err error) error {
@@ -124,6 +143,17 @@ func Classify(err error) error {
 // already classified, and errors it does not recognize, are returned
 // unchanged. nil stays nil.
 func ClassifyService(err error, svc Service) error {
+	return classify(err, svc, false)
+}
+
+// ClassifyWrite is like ClassifyService for errors returned by write calls:
+// an insufficient-permission error carries the write login hint
+// (gwork auth login --services <svc> --write <svc>).
+func ClassifyWrite(err error, svc Service) error {
+	return classify(err, svc, true)
+}
+
+func classify(err error, svc Service, write bool) error {
 	if err == nil {
 		return nil
 	}
@@ -139,7 +169,7 @@ func ClassifyService(err error, svc Service) error {
 
 	var ge *googleapi.Error
 	if errors.As(err, &ge) {
-		return classifyAPI(err, errContext(err, ge), ge, svc)
+		return classifyAPI(err, errContext(err, ge), ge, svc, write)
 	}
 	return err
 }
@@ -208,7 +238,7 @@ func classifyOAuth(err error, ctx, code, desc string) error {
 }
 
 // classifyAPI handles googleapi.Error responses.
-func classifyAPI(err error, ctx string, ge *googleapi.Error, svc Service) error {
+func classifyAPI(err error, ctx string, ge *googleapi.Error, svc Service, write bool) error {
 	reasons := apiReasons(ge)
 	msg := ge.Message
 	if msg == "" {
@@ -233,6 +263,9 @@ func classifyAPI(err error, ctx string, ge *googleapi.Error, svc Service) error 
 		hint := "run: gwork auth login --services <service>"
 		if svc != "" {
 			hint = LoginHint(svc)
+			if write {
+				hint = WriteLoginHint(svc)
+			}
 		}
 		return &Error{Kind: ErrInsufficientScope, Message: withContext("missing OAuth scope", ctx, msg), Hint: hint, Err: err}
 	case has("accessNotConfigured", "SERVICE_DISABLED", "API_DISABLED") ||

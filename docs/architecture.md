@@ -1,8 +1,9 @@
 # gwork — Architecture and technical decisions
 
-`gwork` is a single Go binary that exposes **read-only** access to Gmail, Google
-Drive, Google Chat and Google Calendar through two front-ends that share the same
-core:
+`gwork` is a single Go binary that exposes access to Gmail, Google Drive, Google
+Chat and Google Calendar through two front-ends that share the same core. It is
+**read-only by default**; write operations for Gmail, Calendar and Chat are an
+explicit double opt-in (see [Write operations](#write-operations)):
 
 - a **CLI** (cobra) for humans and scripts (`--output json` for machines);
 - an **MCP server** (`gwork mcp`, stdio) for AI agents.
@@ -23,7 +24,7 @@ can be opened later with "bring your own OAuth client".
 | MCP | `github.com/modelcontextprotocol/go-sdk` (official), stdio transport |
 | Token storage | `github.com/zalando/go-keyring`; fallback to a `0600` JSON file when no keyring is available |
 | Browser | `github.com/pkg/browser` (always print the URL too, for headless/SSH use) |
-| Scope policy v1 | Read-only scopes only; requested incrementally per service |
+| Scope policy | Read-only scopes by default, requested incrementally per service; write scopes only with `auth login --write` (see Write operations) |
 | License | MIT |
 
 ## Layout
@@ -66,7 +67,7 @@ Desktop client, distributed internally by the maintainers. Desktop client
 secrets are not confidential per Google, but they must never be committed to
 the repo.
 
-### Login flow (`gwork auth login [--services gmail,calendar,drive,chat]`)
+### Login flow (`gwork auth login [--services gmail,calendar,drive,chat] [--write gmail,calendar,chat]`)
 
 1. Listen on `127.0.0.1:0`; redirect URI `http://127.0.0.1:<port>/callback`.
 2. Auth URL with `access_type=offline`, `prompt=consent`, PKCE S256,
@@ -77,7 +78,7 @@ the repo.
 4. Fetch the account email (`openid email` scopes, userinfo / id_token).
 5. Store token + granted scopes under the account email.
 
-Scopes (read-only):
+Scopes (read-only; write scopes are listed under Write operations):
 
 | Service | Scopes |
 |---|---|
@@ -186,12 +187,13 @@ Content rules:
 
 ## MCP server
 
-`gwork mcp` runs over stdio with the official go-sdk. Tools (all annotated
-`readOnlyHint: true`), each with typed input/output structs:
+`gwork mcp` runs over stdio with the official go-sdk. The tools below are
+annotated `readOnlyHint: true`; write tools exist only with `--allow-write`
+(see Write operations). Each tool has typed input/output structs:
 
 | Tool | Inputs |
 |---|---|
-| `whoami` | (none) current account + granted services |
+| `whoami` | (none) current account, granted services, `write_services`, `allow_send` |
 | `gmail_search` | `query`, `max_results` |
 | `gmail_get_message` | `message_id`, `max_chars`, `include_html` |
 | `gmail_get_thread` | `thread_id`, `max_chars` (budget shared by all bodies) |
@@ -222,12 +224,93 @@ files.
   (`isError: true`) with the hint.
 - Nothing is written to stdout except protocol messages; logs go to stderr.
 
+## Write operations
+
+gwork is read-only unless the user opts in twice: once when granting OAuth
+scopes and once when starting the MCP server. Drive has no write operations.
+
+### Scopes
+
+Write scopes are requested **in addition to** the read scopes, never instead
+of them. A service counts as write-granted only when both its read and write
+scopes are stored.
+
+| Service | Extra write scope | Covers |
+|---|---|---|
+| gmail | `gmail.modify` | drafts, send, labels, trash |
+| calendar | `calendar.events` | create, update, delete events |
+| chat | `chat.messages.create` | post messages |
+| drive | none | not writable; `--write drive` is an error |
+
+### Double opt-in
+
+1. `gwork auth login --write gmail,calendar,chat|all` requests the write scopes
+   of the listed services (implying their read scopes). Default: none.
+   Missing write access yields `run: gwork auth login --services <svc> --write <svc>`.
+2. `gwork mcp --allow-write gmail,calendar,chat|all` registers the write tools
+   of the listed services, only if they are also write-granted (otherwise a
+   warning with the login hint is logged). Default: none, so the MCP server
+   stays read-only. `whoami` reports `write_services` and `allow_send`.
+
+CLI write commands only need step 1: the user is at the keyboard.
+
+### Sending email (`--allow-send`)
+
+Gmail tools that send mail are registered only with `gwork mcp --allow-send`,
+which requires `gmail` in `--allow-write` (otherwise an error at startup).
+Without it an agent can create drafts but not send them. There are no
+recipient or domain restrictions.
+
+### CLI write commands
+
+All write commands take `--yes/-y` and `--dry-run` (shared in
+`internal/cli/write.go`):
+
+- Without `--yes` the command prints a summary and asks `Proceed? [y/N]` on
+  stderr when stdin is a terminal; when it is not, it fails asking for `--yes`.
+- `--dry-run` prints the request that would be sent (JSON with `--json`) and
+  exits without calling Google; nothing is changed.
+- Errors from write calls carry the write login hint.
+
+### MCP write tools
+
+Registered with `addWriteTool`: `readOnlyHint: false`, plus per-tool
+`destructiveHint`, `idempotentHint` and `openWorldHint` (tools that reach
+other people, like sending mail or posting in Chat, are open-world). Every call
+writes an audit line on stderr (Info: tool, account, service, duration,
+ok/error) that never includes message bodies or other content. When write
+tools are enabled the server instructions tell the model that they can change
+the user's data, to prefer drafts and to ask the user for explicit
+confirmation before sending, deleting or changing anything.
+
+### Prompt-injection rationale
+
+Mail, events and chat messages are untrusted text that an agent reads; an
+attacker can embed instructions in them. Write access turns such an injection
+from a data leak into an action (sending mail, deleting events). Hence the
+opt-in scopes, the opt-in tools, a separate switch for sending, draft-first
+guidance, tool annotations that let clients ask for confirmation, and an audit
+trail.
+
+### Gmail
+
+_Tools and commands: see GWORK-US-0032_
+
+### Calendar
+
+_Tools and commands: see GWORK-US-0033_
+
+### Chat
+
+_Tools and commands: see GWORK-US-0034_
+
 ## Testing
 
 - Unit tests per package; Google APIs faked with `httptest.Server` +
   `option.WithEndpoint` / `option.WithHTTPClient`.
 - Auth flow tested with a fake token endpoint and a simulated browser callback.
-- MCP tools tested with the go-sdk in-memory transport.
+- MCP tools tested with the go-sdk in-memory transport. `testutil.FakeProvider`
+  grants all write services by default; `GrantWrite(...)` restricts them.
 - `go vet`, `gofmt`, `golangci-lint`, `go test -race ./...` in CI.
 
 ## Build and release
