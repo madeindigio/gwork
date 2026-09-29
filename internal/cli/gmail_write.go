@@ -87,16 +87,21 @@ func readBodyFile(app *App, path string) (string, error) {
 	return string(b), nil
 }
 
-// recipients lists every explicit recipient, for the confirmation prompt.
-func recipients(in gmail.ComposeInput) string {
-	all := append(append(append([]string{}, in.To...), in.Cc...), in.Bcc...)
-	if len(all) == 0 {
-		if in.ReplyToMessageID != "" {
-			return "the recipients of message " + in.ReplyToMessageID
+// formatRecipients renders To/Cc/Bcc for the confirmation prompt.
+func formatRecipients(r *gmail.Recipients) string {
+	var parts []string
+	for _, g := range []struct {
+		label string
+		l     []string
+	}{{"To", r.To}, {"Cc", r.Cc}, {"Bcc", r.Bcc}} {
+		if len(g.l) > 0 {
+			parts = append(parts, g.label+": "+output.Ellipsize(strings.Join(g.l, ", "), 200))
 		}
+	}
+	if len(parts) == 0 {
 		return "nobody"
 	}
-	return strings.Join(all, ", ")
+	return strings.Join(parts, "; ")
 }
 
 func newGmailDraftCmd(app *App) *cobra.Command {
@@ -159,12 +164,17 @@ func newGmailDraftSendCmd(app *App) *cobra.Command {
 			if wf.DryRun {
 				return app.printDryRun(map[string]any{"action": "send_draft", "draft_id": id})
 			}
-			if err := app.confirmWrite(wf, fmt.Sprintf("Send draft %s to its recipients.", id)); err != nil {
-				return err
-			}
 			ctx := cmd.Context()
 			opts, err := app.WriteClientOptions(ctx, auth.Gmail)
 			if err != nil {
+				return err
+			}
+			r, err := gmail.DraftRecipients(ctx, id, opts...)
+			if err != nil {
+				return classifyWrite(err, auth.Gmail)
+			}
+			summary := fmt.Sprintf("Send draft %s %q. %s.", id, output.Ellipsize(r.Subject, 60), formatRecipients(r))
+			if err := app.confirmWrite(wf, summary); err != nil {
 				return err
 			}
 			res, err := gmail.SendDraft(ctx, id, opts...)
@@ -211,13 +221,17 @@ func newGmailSendCmd(app *App) *cobra.Command {
 			if wf.DryRun {
 				return app.printDryRun(map[string]any{"action": "send_message", "message": in})
 			}
-			summary := fmt.Sprintf("Send email %q to %s.", output.Ellipsize(in.Subject, 60), recipients(in))
-			if err := app.confirmWrite(wf, summary); err != nil {
-				return err
-			}
 			ctx := cmd.Context()
 			opts, err := app.WriteClientOptions(ctx, auth.Gmail)
 			if err != nil {
+				return err
+			}
+			r, err := gmail.ResolveRecipients(ctx, in, opts...)
+			if err != nil {
+				return classifyWrite(err, auth.Gmail)
+			}
+			summary := fmt.Sprintf("Send email %q. %s.", output.Ellipsize(r.Subject, 60), formatRecipients(r))
+			if err := app.confirmWrite(wf, summary); err != nil {
 				return err
 			}
 			res, err := gmail.SendMessage(ctx, in, opts...)
