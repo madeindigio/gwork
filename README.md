@@ -242,9 +242,9 @@ Build-time only (Makefile / release pipeline): `GWORK_OAUTH_CLIENT_ID`,
   search API, so `chat search` lists the messages of your spaces since `--since`
   and filters them locally, stopping after `--max-scan` messages (default
   2000). Narrow `--since` or `--space` for complete results.
-- **Chat sender names**: the Chat API often returns only `users/{id}` for
-  senders. `gwork` fills in display names from space memberships when Google
-  provides them; otherwise the sender is shown as `users/{id}`.
+- **Chat sender names**: Google normally returns the sender's display name.
+  When it is missing, `gwork` looks it up in the space memberships; if that
+  fails too, the sender is shown as `users/{id}`.
 - **Chat spaces**: group chats and DMs appear only once they have a message;
   `chat dm` fails if you never exchanged a message with that person.
 - **Sheets**: `drive read` exports only the **first sheet** as CSV (use

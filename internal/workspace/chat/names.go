@@ -15,9 +15,9 @@ const maxMembersPerSpace = 5000
 // NameResolver fills in missing sender display names from space
 // memberships (spaces.members.list, chat.memberships.readonly).
 //
-// With user authentication the Chat API usually returns only the sender's
-// resource name ("users/123") and type, not the display name. Membership
-// listings sometimes carry display names; when they do not, or when the
+// The Chat API normally returns the sender's display name, but some messages
+// only carry the resource name ("users/123") and type. Membership listings
+// sometimes carry display names; when they do not, or when the
 // listing fails (e.g. 403), the resolver degrades silently and senders keep
 // their resource names. Results are cached per space for the resolver's
 // lifetime (one CLI invocation or tool call). It is safe for concurrent use.

@@ -114,8 +114,8 @@ func registerChat(s *mcp.Server, deps Deps) {
 	addReadOnlyTool(s, deps, auth.Chat, &mcp.Tool{
 		Name: "chat_list_messages",
 		Description: "List messages of a Google Chat space, newest first by default, optionally within a time window " +
-			"and/or one thread (max_results up to 1000). Senders are users/{id}; display names are filled in from space memberships when " +
-			"Google provides them. since/until: " + timeExpressions,
+			"and/or one thread (max_results up to 1000). Senders carry name (users/{id}) and display_name; missing display names are filled in " +
+			"from space memberships when possible. since/until: " + timeExpressions,
 	}, func(ctx context.Context, in chatListMessagesInput) (chatMessagesOutput, error) {
 		win, err := timeutil.ParseWindow(in.Since, in.Until, deps.CurrentTime(), "", "")
 		if err != nil {

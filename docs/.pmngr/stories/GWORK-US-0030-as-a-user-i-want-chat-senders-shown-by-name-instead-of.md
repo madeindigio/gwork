@@ -2,13 +2,14 @@
 id: GWORK-US-0030
 type: story
 title: As a user I want Chat senders shown by name instead of users/{id}
-status: backlog
+status: cancelled
 priority: medium
 parent: GWORK-EP-0006
 author: mcp
 estimate: 3
 created: 2026-09-24T21:50:32Z
-updated: 2026-09-24T21:50:32Z
+updated: 2026-09-29T21:43:52Z
+closed: 2026-09-29T21:43:52Z
 ---
 
 ## Description

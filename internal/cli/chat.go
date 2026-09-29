@@ -108,8 +108,8 @@ func newChatMessagesCmd(app *App) *cobra.Command {
 		Short: "List messages of a space (spaces/XXX or XXX)",
 		Long: "List messages of a space, newest first by default.\n\n" +
 			"--since/--until accept RFC 3339, YYYY-MM-DD, today, yesterday or relative\n" +
-			"values such as 7d or 24h. Sender display names are resolved from the space\n" +
-			"memberships when Google provides them; otherwise senders show as users/{id}.",
+			"values such as 7d or 24h. Missing sender display names are looked up in\n" +
+			"the space memberships; if unavailable, senders show as users/{id}.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()

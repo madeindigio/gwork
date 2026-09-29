@@ -174,12 +174,11 @@ Content rules:
 - Chat has no user-level full-text search API: `chat search` lists messages in
   the selected spaces within a time window and filters client-side, capped by
   `--max-scan`.
-- Chat sender display names: with user authentication the Chat API returns
-  senders only as `users/{id}` without `displayName`. gwork tries to fill
-  names from space memberships (disable with `--no-resolve-names`), but
-  Google usually omits member display names too, so senders are often shown
-  as `users/{id}`. Showing names (e.g. via the People API) is follow-up
-  GWORK-US-0030.
+- Chat sender display names: verified against the digio tenant (2026-09-29),
+  the Chat API returns `sender.displayName` for human senders with user
+  authentication. When a message lacks it, gwork fills it from space
+  memberships (disable with `--no-resolve-names`); if that also fails the
+  sender is shown as `users/{id}`.
 
 ## MCP server
 

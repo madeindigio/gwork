@@ -2,14 +2,15 @@
 id: GWORK-EP-0006
 type: epic
 title: Chat read-only
-status: in_progress
+status: done
 priority: high
 milestone: GWORK-M-0002
 author: mcp
 labels: [chat]
 created: 2026-09-24T21:16:00Z
-updated: 2026-09-24T22:13:46Z
+updated: 2026-09-29T21:43:52Z
 started: 2026-09-24T22:13:46Z
+closed: 2026-09-29T21:43:52Z
 ---
 
 ## Description
