@@ -1,14 +1,15 @@
 # gwork
 
-**Read-only Google Workspace from the terminal and from AI agents.**
+**Google Workspace from the terminal and from AI agents: read-only by default, opt-in writes.**
 
 `gwork` is a single Go binary that lets people and AI agents search and read
 **Gmail**, **Google Calendar**, **Google Drive** and **Google Chat** with their
-own Google account. It works as:
+own Google account, and, only when you opt in, create drafts and send mail,
+manage events and post Chat messages. It works as:
 
 - a **CLI** for humans and scripts (text tables, or `--json` for machines);
 - an **MCP server** (`gwork mcp`, stdio) so Claude Code, Claude Desktop and
-  other MCP clients can use the same read-only tools.
+  other MCP clients can use the same tools.
 
 It was built for digio's Google Workspace (`digio.es`), with an Internal OAuth
 app, but the code is generic and MIT licensed: any organization can use it with
@@ -17,7 +18,8 @@ its own OAuth client.
 Why: agents and scripts need context from mail, calendars, documents and chats,
 and the usual options either need write access, send data to a third-party
 service, or require an admin-installed bot. `gwork` asks only for read-only
-scopes, runs on your machine and talks directly to Google's APIs.
+scopes unless you explicitly grant write access, runs on your machine and talks
+directly to Google's APIs.
 
 ## Contents
 
@@ -42,8 +44,15 @@ scopes, runs on your machine and talks directly to Google's APIs.
 | Calendar | `calendar calendars`, `events`, `get` | Calendar list, events in a time window (recurring events expanded, free-text filter), full event detail with attendees and Meet link |
 | Drive | `drive search`, `get`, `read`, `download` | Search My Drive and shared drives by text, name, type, owner, folder or date; metadata; Docs as Markdown, Sheets as CSV, Slides as text; download or export any file |
 | Chat | `chat spaces`, `dm`, `messages`, `get`, `search` | Spaces, group chats and DMs; find the DM with a person; messages by time window or thread; text search across spaces |
+| Gmail (write) | `gmail draft create`, `draft send`, `send`, `label`, `archive`, `mark-read`, `mark-unread`, `star`, `unstar`, `trash`, `untrash` | Plain-text drafts and replies (threaded, reply-all), sending, labels by name or id, archive, read state, trash |
+| Calendar (write) | `calendar event create`, `update`, `delete`, `respond` | Timed or all-day events with guests and Meet link, partial updates that keep guests' responses, delete, RSVP |
+| Chat (write) | `chat send` | Post to a space, an existing DM or a thread |
 | Auth | `auth login`, `status`, `list`, `use`, `logout` | Browser login with PKCE, several accounts, incremental per-service consent, revocation |
-| MCP | `mcp` | 16 read-only tools (15 plus `whoami`) mirroring the commands above (see [docs/mcp.md](docs/mcp.md)) |
+| MCP | `mcp` | 16 read-only tools (15 plus `whoami`) and, with `--allow-write`, 11 write tools mirroring the commands above (see [docs/mcp.md](docs/mcp.md)) |
+
+Write commands need write scopes (`gwork auth login --write gmail,calendar,chat`),
+ask for confirmation before sending, deleting or inviting people (`--yes`
+skips it) and accept `--dry-run` to print the request without calling Google.
 
 Times such as `--from`, `--since` or `--modified-after` accept RFC 3339, dates
 (`2026-09-24`), `today`/`tomorrow`/`yesterday`/`now` and relative values
@@ -51,12 +60,18 @@ Times such as `--from`, `--since` or `--modified-after` accept RFC 3339, dates
 
 ## Security model
 
-- **Read-only scopes only.** `gwork` requests `gmail.readonly`,
+- **Read-only scopes by default.** `gwork` requests `gmail.readonly`,
   `calendar.readonly`, `drive.readonly`, `chat.spaces.readonly`,
   `chat.messages.readonly` and `chat.memberships.readonly` (plus `openid` and
-  `userinfo.email` to know the account). It cannot send, modify or delete
-  anything. Services are consented incrementally: log in with only the ones you
-  need.
+  `userinfo.email` to know the account). Services are consented incrementally:
+  log in with only the ones you need.
+- **Writes are opt-in, twice.** `gwork auth login --write gmail,calendar,chat`
+  adds `gmail.modify`, `calendar.events` and `chat.messages.create` (Drive has
+  no write operations). The MCP server still exposes only read tools unless it
+  is started with `--allow-write <services>`, and sending mail needs
+  `--allow-send` on top. Write tools are annotated as such, and every write
+  call is logged on stderr (without content). CLI write commands confirm before
+  sending, deleting or inviting people.
 - **Your data stays local.** There is no gwork server: the binary calls Google's
   APIs directly with your token and prints to your terminal (or to the MCP
   client you started). What an AI agent then does with tool results depends on
@@ -171,6 +186,14 @@ gwork drive get <fileId>
 gwork drive read <docId>                                 # Markdown for Docs, CSV for Sheets
 gwork drive download <docId> --out plan.pdf --export-format pdf
 
+# Writes (after: gwork auth login --write gmail,calendar,chat)
+gwork gmail draft create --to bob@digio.es --subject "Notes" --body-file notes.txt
+gwork gmail draft create --reply-to <messageId> --reply-all --body "Thanks!"
+gwork gmail archive <messageId>
+gwork calendar event create --summary "1:1" --start "2026-10-02T10:00:00+02:00" --duration 30m --attendee bob@digio.es --meet
+gwork calendar event respond <eventId> --response accepted
+gwork chat send --space spaces/AAAA1234 --text "Deploy done" --dry-run
+
 # Chat
 gwork chat spaces --type space
 gwork chat dm bob@digio.es
@@ -220,6 +243,10 @@ in `<config>/config.json`.
 gwork auth login                                  # once, in a terminal
 claude mcp add gwork -- gwork mcp                 # Claude Code
 claude mcp add --scope user gwork -- gwork mcp --services gmail,calendar
+
+# Opt-in writes: drafts, labels, events and chat messages (no sending mail)
+gwork auth login --write gmail,calendar,chat
+claude mcp add gwork -- gwork mcp --allow-write gmail,calendar,chat
 ```
 
 Only tools of services the account has granted are registered; `whoami` is
@@ -241,7 +268,9 @@ default `hd` hint). The OAuth client is never a build input.
 
 ## Limitations
 
-- **Read-only by design**: no sending, editing, labeling or deleting.
+- **Writes are limited**: Drive is read-only; Gmail bodies are plain text
+  without attachments; `chat send` only posts to existing spaces and DMs (it
+  never creates spaces).
 - **Chat search is client-side**: Google Chat has no user-level full-text
   search API, so `chat search` lists the messages of your spaces since `--since`
   and filters them locally, stopping after `--max-scan` messages (default

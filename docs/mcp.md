@@ -3,8 +3,9 @@
 `gwork mcp` runs a [Model Context Protocol](https://modelcontextprotocol.io)
 server over **stdio**, so AI agents (Claude Code, Claude Desktop and any other
 MCP client) can search and read your Gmail, Google Calendar, Google Drive and
-Google Chat. Every tool is **read-only** (annotated `readOnlyHint: true`) and
-uses the same code as the CLI.
+Google Chat. By default every tool is **read-only** (annotated
+`readOnlyHint: true`); [write tools](#write-tools) for Gmail, Calendar and Chat
+are opt-in. All tools use the same code as the CLI.
 
 - [Before you start](#before-you-start)
 - [Claude Code](#claude-code)
@@ -12,6 +13,7 @@ uses the same code as the CLI.
 - [Other MCP clients](#other-mcp-clients)
 - [Server options](#server-options)
 - [Tool reference](#tool-reference)
+- [Write tools](#write-tools)
 - [Tips for prompts and agents](#tips-for-prompts-and-agents)
 - [Troubleshooting](#troubleshooting)
 
@@ -143,6 +145,8 @@ works: `npx @modelcontextprotocol/inspector gwork mcp`.
 | `--services` | `all` | Tool groups to register: `gmail`, `calendar`, `drive`, `chat` (comma separated) or `all`. Groups the account has not granted are skipped. |
 | `--account` | `$GWORK_ACCOUNT`, then the default account | Google account whose token is used. |
 | `--timeout` | `2m` | Bound for each tool call. The CLI-wide `1m` default does not apply to `gwork mcp`: without `--timeout` each call gets 2m; an explicit value replaces it and `--timeout 0` disables the per-call timeout. |
+| `--allow-write` | none | Register the [write tools](#write-tools) of these services: `gmail`, `calendar`, `chat` (comma separated) or `all`. Each also needs write scopes (`gwork auth login --write ...`); otherwise it is skipped with a warning. |
+| `--allow-send` | off | Also register the Gmail tools that send mail (`gmail_send_draft`, `gmail_send_message`). Requires `gmail` in `--allow-write`. |
 | `--log-level` | `info` | stderr log level: `debug`, `info`, `warn`, `error`. |
 | `--credentials` | see README | Path to the OAuth client `credentials.json`; not needed when it is at `<config>/credentials.json` or `GWORK_CREDENTIALS` is set. |
 
@@ -160,7 +164,7 @@ selected with `--services` and granted by the account.
 
 | Tool | Inputs | Output |
 |---|---|---|
-| `whoami` | none | `account`, `granted_services`, `enabled_services` (tool groups registered in this server), `version` |
+| `whoami` | none | `account`, `granted_services`, `enabled_services` (tool groups registered in this server), `write_services` (write tool groups registered; `[]` when read-only), `allow_send`, `version` |
 
 ### Gmail (`gmail`)
 
@@ -201,6 +205,63 @@ for those.
 | `chat_list_messages` | `space` (required, `spaces/XXX` or `XXX`), `since`, `until`, `thread`, `order` (`asc` or `desc`, default `desc`), `max_results` (default 50, max 1000), `max_chars` (per message) | `messages[]`: `name`, `space`, `thread`, `sender` (`name` = `users/{id}`, `display_name` when known), `text`, `create_time`, attachments; `truncated` |
 | `chat_get_message` | `message_name` (required, `spaces/S/messages/M`), `max_chars` | `message`; `truncated` |
 | `chat_search_messages` | `text` (required, all words, case-insensitive), `spaces[]` (default all), `since` (default `7d`), `max_results` (default 50, max 1000), `max_scan` (default 2000, max 20000), `max_chars` | `matches[]` newest first, `total_matches`, `scanned`, `spaces_scanned`, `spaces_total`, `cap_reached`, `truncated` |
+
+## Write tools
+
+Write tools are registered only when **both** hold:
+
+1. the account granted write scopes: `gwork auth login --write gmail,calendar,chat`
+   (or `all`; Drive has no write tools), and
+2. the server was started with `--allow-write` for that service, e.g.
+   `gwork mcp --allow-write gmail,calendar`.
+
+Tools that send email additionally need `--allow-send`. Write tools are
+annotated `readOnlyHint: false` with `destructiveHint`, `idempotentHint` and
+`openWorldHint` so clients can ask you before running them, and every call is
+logged on stderr (tool, account, service, duration, result; never the content).
+
+```bash
+# Claude Code: drafts, labels, events and chat messages, but no sending mail
+gwork auth login --write gmail,calendar,chat
+claude mcp add gwork -- gwork mcp --allow-write gmail,calendar,chat
+```
+
+> Mail, events and chat messages are untrusted input: a message can contain
+> instructions aimed at your agent. Enable only the write services you need,
+> prefer drafts over `--allow-send`, and review what the agent is about to do.
+
+### Gmail writes (`--allow-write gmail`)
+
+| Tool | Inputs | Output | Hints |
+|---|---|---|---|
+| `gmail_create_draft` | `to[]`, `cc[]`, `bcc[]`, `subject`, `body` (plain text), `reply_to_message_id`, `reply_all` | `draft_id`, `message_id`, `thread_id`, `label_ids` | not destructive |
+| `gmail_modify_labels` | `message_id` or `thread_id` (exactly one), `add_labels[]`, `remove_labels[]` (ids or names; archive = remove `INBOX`, mark read = remove `UNREAD`, star = add `STARRED`) | `kind`, `id`, `thread_id`, `label_ids` | idempotent |
+| `gmail_trash` | `message_id` or `thread_id` | same as above | destructive |
+| `gmail_untrash` | `message_id` or `thread_id` | same as above | idempotent |
+| `gmail_send_draft` | `draft_id` | `message_id`, `thread_id`, `label_ids` | destructive, open world; needs `--allow-send` |
+| `gmail_send_message` | same as `gmail_create_draft` (at least one recipient) | `message_id`, `thread_id`, `label_ids` | destructive, open world; needs `--allow-send` |
+
+Replies (`reply_to_message_id`) stay in the original thread with proper
+`In-Reply-To`/`References` headers; the recipient defaults to the original
+Reply-To or From, and `reply_all` adds the original To and Cc minus yourself.
+
+### Calendar writes (`--allow-write calendar`)
+
+| Tool | Inputs | Output | Hints |
+|---|---|---|---|
+| `calendar_create_event` | `summary`, `start` (required); `end` or `duration_minutes` (default 30), `all_day`, `time_zone`, `attendees[]`, `add_meet`, `description`, `location`, `visibility`, `transparency`, `calendar_id`, `send_updates` | `event` | open world |
+| `calendar_update_event` | `event_id` (required) plus any field to change; `add_attendees[]`, `remove_attendees[]` keep other guests' responses | `event` | destructive, idempotent |
+| `calendar_delete_event` | `event_id` (instance id deletes one occurrence), `calendar_id`, `send_updates` | `deleted`, `calendar_id`, `event_id` | destructive, idempotent |
+| `calendar_respond_event` | `event_id`, `response` (`accepted`, `declined`, `tentative`), `comment` | `event` | idempotent |
+
+`send_updates` is `all` (default), `external_only` or `none`. All-day `end`
+dates are exclusive. Times accept the [time expressions](#time-expressions).
+
+### Chat writes (`--allow-write chat`)
+
+| Tool | Inputs | Output | Hints |
+|---|---|---|---|
+| `chat_send_message` | `space` (`spaces/XXX` or `XXX`) or `user_email` (exactly one; the DM must already exist), `text` (max 4096 characters), `thread` (reply in that thread) | `message` | open world |
 
 ## Tips for prompts and agents
 

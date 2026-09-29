@@ -16,7 +16,7 @@ import (
 
 // newChatCmd returns the "gwork chat" command group.
 func newChatCmd(app *App) *cobra.Command {
-	cmd := serviceGroup(auth.Chat, "Read Google Chat spaces and messages")
+	cmd := serviceGroup(auth.Chat, "Read Google Chat spaces and messages; send messages (needs auth login --write)")
 	cmd.AddCommand(
 		newChatSpacesCmd(app),
 		newChatDMCmd(app),

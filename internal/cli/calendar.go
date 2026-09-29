@@ -16,7 +16,7 @@ import (
 
 // newCalendarCmd returns the "gwork calendar" command group.
 func newCalendarCmd(app *App) *cobra.Command {
-	cmd := serviceGroup(auth.Calendar, "Read Google Calendar calendars and events")
+	cmd := serviceGroup(auth.Calendar, "Read Google Calendar calendars and events; create, update, delete and RSVP (needs auth login --write)")
 	cmd.AddCommand(
 		newCalendarCalendarsCmd(app),
 		newCalendarEventsCmd(app),

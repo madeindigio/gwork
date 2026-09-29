@@ -294,15 +294,84 @@ trail.
 
 ### Gmail
 
-_Tools and commands: see GWORK-US-0032_
+Scope `gmail.modify`. `workspace/gmail` builds RFC 5322 messages itself (`net/mail` address validation, CR/LF rejected
+in every header value, RFC 2047 Q-encoding for non-ASCII subject and display names, `text/plain;
+charset=UTF-8`, quoted-printable body, base64url `raw`). Replies fetch the original (metadata),
+set `In-Reply-To`/`References`, prefix `Re: ` once (case-insensitive) and reuse its `threadId`.
+The recipient defaults to Reply-To or From; `--reply-all` adds the original To and Cc minus the
+account's own address (from `users.getProfile`), deduplicated case-insensitively.
+
+| CLI | Confirmation | MCP tool (destructive/idempotent/openWorld) |
+|---|---|---|
+| `gmail draft create [--reply-to ID [--reply-all]]` | no | `gmail_create_draft` (F/F/F) |
+| `gmail draft send ID` | yes | `gmail_send_draft` (T/F/T, needs `--allow-send`) |
+| `gmail send` | yes | `gmail_send_message` (T/F/T, needs `--allow-send`) |
+| `gmail label ID --add X --remove Y [--thread]` | no | `gmail_modify_labels` (F/T/F) |
+| `gmail archive\|mark-read\|mark-unread\|star\|unstar ID [--thread]` | no | `gmail_modify_labels` (remove INBOX, remove UNREAD, add UNREAD, add STARRED, remove STARRED) |
+| `gmail trash ID [--thread]` | yes | `gmail_trash` (T/T/F) |
+| `gmail untrash ID [--thread]` | no | `gmail_untrash` (F/T/F) |
+
+Labels are given by ID or name (case-insensitive, resolved with one `labels.list` call only when a
+non-system label is used; unknown names are an error). Message vs thread: `--thread` on the CLI,
+exactly one of `message_id`/`thread_id` in MCP. Bodies are plain text only (`--body`, or
+`--body-file PATH|-`; `-` needs `--yes`); attachments and HTML are not supported. All commands
+support `--dry-run`, which prints the request as JSON without any network call.
+MCP descriptions instruct the model to ask the user for explicit confirmation before sending or
+trashing, and to prefer drafts.
+
+Story: GWORK-US-0032.
 
 ### Calendar
 
-_Tools and commands: see GWORK-US-0033_
+Scope `calendar.events`. Commands (`gwork calendar event ...`, all take `--dry-run`, `--calendar ID`; all but `respond` take `--yes` and `--send-updates all|external_only|none`):
+
+| Command | Notes |
+|---|---|
+| `create --summary S --start T [--end T \| --duration 45m] [--all-day] [--attendee EMAIL]... [--description] [--location] [--meet] [--time-zone] [--visibility] [--transparency]` | Timed events default to 30m; `--end` is exclusive for `--all-day`. Confirms only when inviting others and send-updates is not `none`. |
+| `update ID [same fields] [--add-attendee] [--remove-attendee]` | PATCH: only given flags change; moving `--start` keeps the duration; existing guests keep their responses. Confirms when the event has other guests. |
+| `delete ID` | Always confirms (or `--yes`). An instance id deletes one occurrence of a recurring event. |
+| `respond ID --response accepted\|declined\|tentative [--comment]` | Never confirms; the organizer is notified. Fails if you are not an attendee. |
+
+MCP tools (registered only with `--allow-write calendar`, all `readOnlyHint=false`, `openWorldHint=true`):
+
+| Tool | destructive | idempotent |
+|---|---|---|
+| `calendar_create_event` | false | false |
+| `calendar_update_event` | true | true |
+| `calendar_delete_event` | true | true |
+| `calendar_respond_event` | false | true |
+
+Times use the shared `timeutil` syntax. `send_updates` maps to the API values `all|externalOnly|none` (default `all`).
+Descriptions tell the model to get explicit user confirmation before inviting people or changing or deleting events.
+Logic lives in `internal/workspace/calendar/write.go` (`CreateEvent`, `UpdateEvent`, `DeleteEvent`, `RespondEvent`).
+
+Story: GWORK-US-0033.
 
 ### Chat
 
-_Tools and commands: see GWORK-US-0034_
+Scope `chat.messages.create`.
+
+| Surface | Name | Notes |
+|---|---|---|
+| CLI | `gwork chat send (--space SPACE \| --to EMAIL) (--text TEXT \| --text-file PATH\|-) [--thread THREAD]` | write flags `--yes`, `--dry-run`; confirmation is always required |
+| MCP | `chat_send_message` (`space` xor `user_email`, `text`, `thread?`) | destructive=false, idempotent=false, openWorld=true |
+
+- Posts as the user via `spaces.messages.create`. The target is a space (`spaces/X` or bare `X`)
+  or, with `--to`/`user_email`, the **existing** DM with that user, resolved through
+  `spaces.findDirectMessage`. gwork never creates spaces: if there is no DM yet the command fails
+  and asks the user to start the conversation from Chat.
+- `text` is required and limited to 4096 characters (Chat API limit), validated before any call.
+- `--thread` / `thread` (`spaces/X/threads/Y`) replies in that thread using
+  `messageReplyOption=REPLY_MESSAGE_OR_FAIL`, so it fails instead of starting a new thread. The
+  thread must belong to the target space.
+- Because a message reaches other people, the CLI always asks for confirmation (summary shows the
+  target and an ellipsized preview); `--text-file -` reads stdin and therefore needs `--yes`.
+  The MCP tool description instructs the model to show the exact text and target and obtain
+  explicit user confirmation before calling.
+- Returns the created message (`name`, `space`, `thread`, `create_time`, `text`, ...), the same
+  `Message` type as the read tools.
+
+Story: GWORK-US-0034.
 
 ## Testing
 
