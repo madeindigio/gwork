@@ -15,8 +15,8 @@ import (
 
 	"golang.org/x/oauth2"
 
-	"github.com/digio/gwork-cli/internal/auth"
-	"github.com/digio/gwork-cli/internal/config"
+	"github.com/madeindigio/gwork/internal/auth"
+	"github.com/madeindigio/gwork/internal/config"
 )
 
 // fakeOAuth serves /token, /userinfo and /revoke like Google would.

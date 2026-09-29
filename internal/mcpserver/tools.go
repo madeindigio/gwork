@@ -6,7 +6,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/digio/gwork-cli/internal/auth"
+	"github.com/madeindigio/gwork/internal/auth"
 )
 
 // timeExpressions documents the time expressions accepted by tool inputs

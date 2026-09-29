@@ -13,10 +13,10 @@ import (
 	"golang.org/x/oauth2"
 	"google.golang.org/api/option"
 
-	"github.com/digio/gwork-cli/internal/auth"
-	"github.com/digio/gwork-cli/internal/buildinfo"
-	"github.com/digio/gwork-cli/internal/config"
-	"github.com/digio/gwork-cli/internal/output"
+	"github.com/madeindigio/gwork/internal/auth"
+	"github.com/madeindigio/gwork/internal/buildinfo"
+	"github.com/madeindigio/gwork/internal/config"
+	"github.com/madeindigio/gwork/internal/output"
 )
 
 // DefaultTimeout is the default value of --timeout for API commands.

@@ -16,7 +16,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/digio/gwork-cli/internal/fsutil"
+	"github.com/madeindigio/gwork/internal/fsutil"
 )
 
 // EnvConfigDir is the environment variable overriding the config directory.

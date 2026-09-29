@@ -7,7 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/digio/gwork-cli/internal/buildinfo"
+	"github.com/madeindigio/gwork/internal/buildinfo"
 )
 
 type versionInfo struct {

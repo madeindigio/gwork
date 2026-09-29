@@ -9,7 +9,7 @@ import (
 
 	"google.golang.org/api/option"
 
-	"github.com/digio/gwork-cli/internal/fsutil"
+	"github.com/madeindigio/gwork/internal/fsutil"
 )
 
 // ErrExists is returned by Download when the output file exists and Force

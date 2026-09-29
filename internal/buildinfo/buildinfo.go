@@ -4,9 +4,9 @@
 //
 // Example:
 //
-//	go build -ldflags "-X github.com/digio/gwork-cli/internal/buildinfo.Version=v1.0.0 \
-//	  -X github.com/digio/gwork-cli/internal/buildinfo.OAuthClientID=... \
-//	  -X github.com/digio/gwork-cli/internal/buildinfo.OAuthClientSecret=..."
+//	go build -ldflags "-X github.com/madeindigio/gwork/internal/buildinfo.Version=v1.0.0 \
+//	  -X github.com/madeindigio/gwork/internal/buildinfo.OAuthClientID=... \
+//	  -X github.com/madeindigio/gwork/internal/buildinfo.OAuthClientSecret=..."
 //
 // OAuth client secrets must never be committed to the repository.
 package buildinfo

@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/digio/gwork-cli/internal/auth"
-	"github.com/digio/gwork-cli/internal/testutil"
+	"github.com/madeindigio/gwork/internal/auth"
+	"github.com/madeindigio/gwork/internal/testutil"
 )
 
 func gmailB64(s string) string { return base64.RawURLEncoding.EncodeToString([]byte(s)) }

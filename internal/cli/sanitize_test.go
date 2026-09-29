@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/digio/gwork-cli/internal/testutil"
+	"github.com/madeindigio/gwork/internal/testutil"
 )
 
 // Terminal escape payloads: OSC 52 writes the clipboard, CSI clears the

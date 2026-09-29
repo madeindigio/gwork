@@ -80,7 +80,7 @@ Times such as `--from`, `--since` or `--modified-after` accept RFC 3339, dates
 ### Release binaries
 
 Download the archive for your platform (Linux, macOS, Windows; amd64 or arm64)
-from the [GitHub releases](https://github.com/digio/gwork-cli/releases), verify
+from the [GitHub releases](https://github.com/madeindigio/gwork/releases), verify
 it and put `gwork` on your `PATH`:
 
 ```sh
@@ -91,17 +91,16 @@ gwork version
 ```
 
 Release builds embed digio's OAuth client, so digio users can run
-`gwork auth login` right away. The binaries are not code-signed yet (planned):
-on macOS remove the quarantine flag with
-`xattr -d com.apple.quarantine /usr/local/bin/gwork`; on Windows SmartScreen
-may ask for confirmation.
+`gwork auth login` right away. macOS binaries are signed with digio's
+Developer ID and notarized; Windows binaries are Authenticode-signed (Azure
+Trusted Signing). Linux archives are unsigned; use `checksums.txt`.
 
 ### go install
 
 Requires Go 1.26+:
 
 ```sh
-go install github.com/digio/gwork-cli/cmd/gwork@latest
+go install github.com/madeindigio/gwork/cmd/gwork@latest
 ```
 
 This build has **no embedded OAuth client**: provide a `credentials.json` (see
@@ -110,7 +109,7 @@ below).
 ### From source
 
 ```sh
-git clone https://github.com/digio/gwork-cli.git && cd gwork-cli
+git clone https://github.com/madeindigio/gwork.git && cd gwork
 make build                                   # bin/gwork, no embedded client
 make build GWORK_OAUTH_CLIENT_ID=... GWORK_OAUTH_CLIENT_SECRET=... GWORK_HOSTED_DOMAIN=digio.es
 ```
@@ -274,11 +273,11 @@ make smoke        # smoke test against the real tenant (docs/smoke-test.md)
 - The backlog lives in the repository under `docs/.pmngr` and is managed with
   gintrack (project key `GWORK`).
 - Releases: pushing a tag `v*` runs `.github/workflows/release.yml`, which
-  builds with GoReleaser and embeds the OAuth client from the repository
-  secrets `GWORK_OAUTH_CLIENT_ID`, `GWORK_OAUTH_CLIENT_SECRET` and
-  `GWORK_HOSTED_DOMAIN`. macOS notarization and Windows Authenticode signing
-  can be enabled later (digio has the certificates); placeholders are in
-  `.goreleaser.yaml` and the workflow.
+  builds every platform with the OAuth client embedded from repository
+  secrets, signs and notarizes macOS, Authenticode-signs Windows and publishes
+  a GitHub release with `checksums.txt`. Required secrets and variables:
+  [docs/release.md](docs/release.md). GoReleaser (`make snapshot`) is only
+  used for local, unsigned snapshots.
 - Manual end-to-end check before a release:
   [docs/smoke-test.md](docs/smoke-test.md).
 

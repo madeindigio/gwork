@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/digio/gwork-cli/internal/testutil"
+	"github.com/madeindigio/gwork/internal/testutil"
 )
 
 // fakeMessage returns a metadata/full message JSON object.

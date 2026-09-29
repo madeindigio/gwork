@@ -5,7 +5,7 @@ package main
 import (
 	"os"
 
-	"github.com/digio/gwork-cli/internal/cli"
+	"github.com/madeindigio/gwork/internal/cli"
 )
 
 func main() {

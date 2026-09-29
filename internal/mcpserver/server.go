@@ -21,8 +21,8 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"google.golang.org/api/option"
 
-	"github.com/digio/gwork-cli/internal/auth"
-	"github.com/digio/gwork-cli/internal/buildinfo"
+	"github.com/madeindigio/gwork/internal/auth"
+	"github.com/madeindigio/gwork/internal/buildinfo"
 )
 
 // DefaultToolTimeout bounds each tool call when Deps.Timeout is zero.

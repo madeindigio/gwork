@@ -22,7 +22,7 @@ import (
 
 	"google.golang.org/api/option"
 
-	"github.com/digio/gwork-cli/internal/auth"
+	"github.com/madeindigio/gwork/internal/auth"
 )
 
 // FakeGoogle starts an httptest server serving h and returns client options

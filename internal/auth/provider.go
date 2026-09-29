@@ -11,7 +11,7 @@ import (
 	"golang.org/x/oauth2"
 	"google.golang.org/api/option"
 
-	"github.com/digio/gwork-cli/internal/config"
+	"github.com/madeindigio/gwork/internal/config"
 )
 
 // EnvAccount selects the account when --account is not given.

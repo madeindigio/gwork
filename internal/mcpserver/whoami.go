@@ -5,8 +5,8 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/digio/gwork-cli/internal/auth"
-	"github.com/digio/gwork-cli/internal/buildinfo"
+	"github.com/madeindigio/gwork/internal/auth"
+	"github.com/madeindigio/gwork/internal/buildinfo"
 )
 
 // WhoamiInput is the (empty) input of the whoami tool.

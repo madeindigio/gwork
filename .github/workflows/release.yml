@@ -1,57 +1,415 @@
 name: Release
 
+# Signed release pipeline, triggered by pushing a version tag. Same layout as
+# digiogithub/git-in-track:
+#
+#   check    : tests, and fails fast when a required secret is missing.
+#   linux    : cross-compiled on ubuntu, unsigned (no OS gatekeeper there).
+#   windows  : built on a windows runner and Authenticode-signed with Azure
+#              Trusted Signing (OIDC, no long-lived secret).
+#   macos    : built on a macOS runner, signed with the Developer ID identity
+#              and the hardened runtime, then notarized.
+#   release  : one GitHub release with every archive, checksums.txt and the
+#              changes since the previous tag.
+#
+# Repository configuration (see docs/release.md):
+#   secrets  GWORK_OAUTH_CLIENT_ID, GWORK_OAUTH_CLIENT_SECRET,
+#            GWORK_HOSTED_DOMAIN   embedded OAuth Desktop client (ldflags)
+#            MACOS_SIGNING_BUNDLE  base64 .tar.gz of ~/DIGIO_Software_Signing_Keys
+#                                  (Developer ID .p12 files + kvagerc env file)
+#   vars     AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID,
+#            AZURE_SIGNING_ENDPOINT, AZURE_SIGNING_ACCOUNT,
+#            AZURE_SIGNING_CERT_PROFILE
+#   env      `release`: the Entra app named by vars.AZURE_CLIENT_ID has a
+#            federated credential for repo:madeindigio/gwork:environment:release.
+
 on:
   push:
-    tags: ["v*"]
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to (re)build and release."
+        required: true
+        type: string
+      draft:
+        description: "Publish the release as a draft."
+        required: false
+        type: boolean
+        default: false
 
 permissions:
-  contents: write # create the GitHub release and upload assets
+  contents: read
 
 jobs:
-  goreleaser:
+  check:
+    name: Test and preflight
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # full history for the changelog
+          ref: ${{ inputs.tag || github.ref }}
 
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-
-      - name: Check OAuth secrets are set
+      - name: Check required secrets
         env:
           GWORK_OAUTH_CLIENT_ID: ${{ secrets.GWORK_OAUTH_CLIENT_ID }}
           GWORK_OAUTH_CLIENT_SECRET: ${{ secrets.GWORK_OAUTH_CLIENT_SECRET }}
+          MACOS_SIGNING_BUNDLE: ${{ secrets.MACOS_SIGNING_BUNDLE }}
         run: |
-          if [ -z "$GWORK_OAUTH_CLIENT_ID" ] || [ -z "$GWORK_OAUTH_CLIENT_SECRET" ]; then
-            echo "::error::GWORK_OAUTH_CLIENT_ID / GWORK_OAUTH_CLIENT_SECRET secrets are missing; releases must embed the OAuth client"
-            exit 1
-          fi
+          missing=0
+          for name in GWORK_OAUTH_CLIENT_ID GWORK_OAUTH_CLIENT_SECRET MACOS_SIGNING_BUNDLE; do
+            if [ -z "${!name}" ]; then
+              echo "::error::secret $name is not set"
+              missing=1
+            fi
+          done
+          exit "$missing"
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.sum
 
       - name: Test
         run: go test -race ./...
 
-      - name: GoReleaser
-        uses: goreleaser/goreleaser-action@v6
+  linux:
+    name: Linux
+    needs: check
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        goarch: [amd64, arm64]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
-          distribution: goreleaser
-          version: "~> v2"
-          args: release --clean
+          ref: ${{ inputs.tag || github.ref }}
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: Resolve the version
+        id: version
+        run: |
+          tag="${{ inputs.tag || github.ref_name }}"
+          {
+            echo "version=${tag#v}"
+            echo "date=$(git log -1 --format=%cI)"
+            echo "commit=$(git rev-parse --short HEAD)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Embedded OAuth Desktop client and hd hint (see docs/setup-google-cloud.md).
-          # Injected with -X ldflags; never committed. GoReleaser does not echo them.
+          CGO_ENABLED: "0"
+          GOOS: linux
+          GOARCH: ${{ matrix.goarch }}
           GWORK_OAUTH_CLIENT_ID: ${{ secrets.GWORK_OAUTH_CLIENT_ID }}
           GWORK_OAUTH_CLIENT_SECRET: ${{ secrets.GWORK_OAUTH_CLIENT_SECRET }}
           GWORK_HOSTED_DOMAIN: ${{ secrets.GWORK_HOSTED_DOMAIN }}
-          # Code signing placeholder: add these secrets and enable the
-          # notarize/signs sections of .goreleaser.yaml (GoReleaser's
-          # built-in macOS sign+notarize pipe runs on this Linux runner).
-          # MACOS_SIGN_P12: ${{ secrets.MACOS_SIGN_P12 }}
-          # MACOS_SIGN_PASSWORD: ${{ secrets.MACOS_SIGN_PASSWORD }}
-          # MACOS_NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
-          # MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
-          # MACOS_NOTARY_KEY: ${{ secrets.MACOS_NOTARY_KEY }}
-          # WINDOWS_SIGN_PFX: ${{ secrets.WINDOWS_SIGN_PFX }}
-          # WINDOWS_SIGN_PASSWORD: ${{ secrets.WINDOWS_SIGN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          bi=github.com/madeindigio/gwork/internal/buildinfo
+          mkdir -p dist
+          go build -trimpath -ldflags "-s -w \
+            -X $bi.Version=${{ steps.version.outputs.version }} \
+            -X $bi.Commit=${{ steps.version.outputs.commit }} \
+            -X $bi.Date=${{ steps.version.outputs.date }} \
+            -X $bi.OAuthClientID=$GWORK_OAUTH_CLIENT_ID \
+            -X $bi.OAuthClientSecret=$GWORK_OAUTH_CLIENT_SECRET \
+            -X $bi.HostedDomain=$GWORK_HOSTED_DOMAIN" \
+            -o dist/gwork ./cmd/gwork
+
+      - name: Package
+        run: |
+          set -euo pipefail
+          cp LICENSE README.md dist/
+          tar -C dist -czf "dist/gwork_${{ steps.version.outputs.version }}_linux_${{ matrix.goarch }}.tar.gz" \
+            gwork LICENSE README.md
+          rm -f dist/gwork dist/LICENSE dist/README.md
+          ls -la dist/
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-linux-${{ matrix.goarch }}
+          path: dist/*.tar.gz
+          if-no-files-found: error
+
+  windows:
+    name: Windows (Authenticode)
+    needs: check
+    runs-on: windows-latest
+    # The federated credential on the Entra app is scoped to
+    # repo:madeindigio/gwork:environment:release, so the OIDC token minted
+    # here only validates from within that environment.
+    environment: release
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: Resolve the version
+        id: version
+        shell: bash
+        run: |
+          tag="${{ inputs.tag || github.ref_name }}"
+          {
+            echo "version=${tag#v}"
+            echo "date=$(git log -1 --format=%cI)"
+            echo "commit=$(git rev-parse --short HEAD)"
+          } >> "$GITHUB_OUTPUT"
+
+      # CGO_ENABLED=0, so both architectures cross-compile on the same runner;
+      # they are built here because signtool and the Trusted Signing dlib have
+      # no Linux build and the binary must not travel unsigned between jobs.
+      - name: Build
+        shell: bash
+        env:
+          CGO_ENABLED: "0"
+          GOOS: windows
+          GWORK_OAUTH_CLIENT_ID: ${{ secrets.GWORK_OAUTH_CLIENT_ID }}
+          GWORK_OAUTH_CLIENT_SECRET: ${{ secrets.GWORK_OAUTH_CLIENT_SECRET }}
+          GWORK_HOSTED_DOMAIN: ${{ secrets.GWORK_HOSTED_DOMAIN }}
+        run: |
+          set -euo pipefail
+          bi=github.com/madeindigio/gwork/internal/buildinfo
+          mkdir -p unsigned
+          for arch in amd64 arm64; do
+            GOARCH="$arch" go build -trimpath -ldflags "-s -w \
+              -X $bi.Version=${{ steps.version.outputs.version }} \
+              -X $bi.Commit=${{ steps.version.outputs.commit }} \
+              -X $bi.Date=${{ steps.version.outputs.date }} \
+              -X $bi.OAuthClientID=$GWORK_OAUTH_CLIENT_ID \
+              -X $bi.OAuthClientSecret=$GWORK_OAUTH_CLIENT_SECRET \
+              -X $bi.HostedDomain=$GWORK_HOSTED_DOMAIN" \
+              -o "unsigned/gwork-$arch.exe" ./cmd/gwork
+          done
+          ls -l unsigned
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Sign with Azure Trusted Signing
+        # No credential inputs: the action falls back to the Azure CLI session
+        # established above, which is the federated GitHub identity.
+        uses: azure/trusted-signing-action@v0
+        with:
+          endpoint: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+          trusted-signing-account-name: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.AZURE_SIGNING_CERT_PROFILE }}
+          files-folder: ${{ github.workspace }}\unsigned
+          files-folder-filter: exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+
+      - name: Verify the signature
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Get-ChildItem unsigned/*.exe | ForEach-Object {
+            $sig = Get-AuthenticodeSignature $_.FullName
+            "-- $($_.Name): $($sig.Status) / $($sig.SignerCertificate.Subject)"
+            if ($sig.Status -ne 'Valid') {
+              Write-Output "::error::Unsigned or invalid: $($_.Name) ($($sig.Status))"
+              exit 1
+            }
+          }
+
+      - name: Package
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force -Path dist, stage | Out-Null
+          foreach ($arch in @('amd64', 'arm64')) {
+            Remove-Item stage/* -Force -ErrorAction SilentlyContinue
+            Copy-Item "unsigned/gwork-$arch.exe" stage/gwork.exe
+            Copy-Item LICENSE, README.md stage/
+            Compress-Archive -Path stage/* -DestinationPath "dist/gwork_${env:VERSION}_windows_$arch.zip" -Force
+          }
+          Get-ChildItem dist
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-windows
+          path: dist/*.zip
+          if-no-files-found: error
+
+  macos:
+    name: macOS (signed + notarized)
+    needs: check
+    runs-on: macos-latest
+    # Notarization submits both archives to Apple with --wait.
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: Resolve the version
+        id: version
+        run: |
+          tag="${{ inputs.tag || github.ref_name }}"
+          {
+            echo "version=${tag#v}"
+            echo "date=$(git log -1 --format=%cI)"
+            echo "commit=$(git rev-parse --short HEAD)"
+          } >> "$GITHUB_OUTPUT"
+
+      # Exports SIGNING_IDENTITY, NOTARY_PROFILE and
+      # MACOS_SIGN_KEYCHAIN_PATH/PASSWORD for the steps below.
+      - name: Set up the signing keychain
+        uses: digiogithub/ci-actions/macos-signing-keychain@v1
+        with:
+          signing-bundle: ${{ secrets.MACOS_SIGNING_BUNDLE }}
+          env-file: kvagerc
+          keychain-name: gwork-build
+          notary-profile: gwork-notary
+
+      - name: Build
+        env:
+          CGO_ENABLED: "0"
+          GOOS: darwin
+          GWORK_OAUTH_CLIENT_ID: ${{ secrets.GWORK_OAUTH_CLIENT_ID }}
+          GWORK_OAUTH_CLIENT_SECRET: ${{ secrets.GWORK_OAUTH_CLIENT_SECRET }}
+          GWORK_HOSTED_DOMAIN: ${{ secrets.GWORK_HOSTED_DOMAIN }}
+        run: |
+          set -euo pipefail
+          bi=github.com/madeindigio/gwork/internal/buildinfo
+          mkdir -p dist
+          for arch in arm64 amd64; do
+            GOARCH="$arch" go build -trimpath -ldflags "-s -w \
+              -X $bi.Version=${{ steps.version.outputs.version }} \
+              -X $bi.Commit=${{ steps.version.outputs.commit }} \
+              -X $bi.Date=${{ steps.version.outputs.date }} \
+              -X $bi.OAuthClientID=$GWORK_OAUTH_CLIENT_ID \
+              -X $bi.OAuthClientSecret=$GWORK_OAUTH_CLIENT_SECRET \
+              -X $bi.HostedDomain=$GWORK_HOSTED_DOMAIN" \
+              -o "dist/gwork-$arch" ./cmd/gwork
+          done
+          ls -l dist
+
+      # Hardened runtime plus a secure timestamp: without both, notarization is
+      # rejected. go-keyring shells out to /usr/bin/security, so no extra
+      # entitlements are needed.
+      - name: Codesign
+        uses: digiogithub/ci-actions/macos-codesign@v1
+        with:
+          paths: |
+            dist/gwork-arm64
+            dist/gwork-amd64
+
+      - name: Package
+        run: |
+          set -euo pipefail
+          for arch in arm64 amd64; do
+            rm -rf stage && mkdir stage
+            # zip keeps the signature and is what notarytool accepts for a
+            # loose Mach-O.
+            cp "dist/gwork-$arch" stage/gwork
+            cp LICENSE README.md stage/
+            ( cd stage && zip -qr "../dist/gwork_${{ steps.version.outputs.version }}_darwin_$arch.zip" . )
+            rm -f "dist/gwork-$arch"
+          done
+          rm -rf stage
+          ls -la dist
+
+      # Submit-only: a bare Mach-O cannot carry a stapled ticket, so the
+      # archives pass Gatekeeper's online check. `staple: auto` does not fail
+      # the job when the ticket cannot be attached.
+      - name: Notarize
+        uses: digiogithub/ci-actions/macos-notarize@v1
+        with:
+          paths: dist/*.zip
+          staple: auto
+
+      - name: Clean up the signing keychain
+        if: always()
+        uses: digiogithub/ci-actions/macos-keychain-cleanup@v1
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-macos
+          path: dist/*.zip
+          if-no-files-found: error
+
+  release:
+    name: Publish release
+    needs: [linux, windows, macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: dist-*
+          path: dist
+          merge-multiple: true
+
+      - name: Checksums
+        run: |
+          set -euo pipefail
+          cd dist
+          sha256sum gwork_*.tar.gz gwork_*.zip > checksums.txt
+          cat checksums.txt
+
+      - name: Publish
+        uses: digiogithub/ci-actions/github-release@v1
+        with:
+          tag: ${{ inputs.tag || github.ref_name }}
+          files: |
+            dist/gwork_*.tar.gz
+            dist/gwork_*.zip
+            dist/checksums.txt
+          draft: ${{ inputs.draft || false }}
+          notes-header: |
+            Downloads: `gwork_*_linux_*.tar.gz` for Linux,
+            `gwork_*_darwin_*.zip` for macOS (Developer ID signed and
+            notarized) and `gwork_*_windows_*.zip` for Windows
+            (Authenticode-signed). Verify any of them against `checksums.txt`.
+            Setup: https://github.com/madeindigio/gwork#first-time-setup
+          token: ${{ github.token }}

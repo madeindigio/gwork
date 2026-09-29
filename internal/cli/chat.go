@@ -8,10 +8,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/digio/gwork-cli/internal/auth"
-	"github.com/digio/gwork-cli/internal/output"
-	"github.com/digio/gwork-cli/internal/timeutil"
-	"github.com/digio/gwork-cli/internal/workspace/chat"
+	"github.com/madeindigio/gwork/internal/auth"
+	"github.com/madeindigio/gwork/internal/output"
+	"github.com/madeindigio/gwork/internal/timeutil"
+	"github.com/madeindigio/gwork/internal/workspace/chat"
 )
 
 // newChatCmd returns the "gwork chat" command group.

@@ -9,9 +9,9 @@ import (
 	"time"
 	_ "time/tzdata" // deterministic time zones regardless of the host
 
-	"github.com/digio/gwork-cli/internal/auth"
-	"github.com/digio/gwork-cli/internal/testutil"
-	"github.com/digio/gwork-cli/internal/workspace/calendar"
+	"github.com/madeindigio/gwork/internal/auth"
+	"github.com/madeindigio/gwork/internal/testutil"
+	"github.com/madeindigio/gwork/internal/workspace/calendar"
 )
 
 // calendarMux fakes the Calendar API with a primary calendar containing a

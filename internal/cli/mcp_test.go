@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/digio/gwork-cli/internal/mcpserver"
+	"github.com/madeindigio/gwork/internal/mcpserver"
 )
 
 func TestMCPToolTimeout(t *testing.T) {

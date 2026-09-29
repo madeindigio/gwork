@@ -13,7 +13,7 @@ import (
 
 	"google.golang.org/api/googleapi"
 
-	"github.com/digio/gwork-cli/internal/testutil"
+	"github.com/madeindigio/gwork/internal/testutil"
 )
 
 func TestListCalendars(t *testing.T) {

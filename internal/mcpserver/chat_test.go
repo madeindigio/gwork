@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/digio/gwork-cli/internal/auth"
-	"github.com/digio/gwork-cli/internal/testutil"
+	"github.com/madeindigio/gwork/internal/auth"
+	"github.com/madeindigio/gwork/internal/testutil"
 )
 
 func chatToolMsg(space, id, text string, at time.Time) map[string]any {

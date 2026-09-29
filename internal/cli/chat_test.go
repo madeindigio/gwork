@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/digio/gwork-cli/internal/auth"
-	"github.com/digio/gwork-cli/internal/testutil"
+	"github.com/madeindigio/gwork/internal/auth"
+	"github.com/madeindigio/gwork/internal/testutil"
 )
 
 // chatCLIFake serves two spaces (A with a resolvable member, B whose

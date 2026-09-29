@@ -9,9 +9,9 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/digio/gwork-cli/internal/auth"
-	"github.com/digio/gwork-cli/internal/testutil"
-	"github.com/digio/gwork-cli/internal/workspace/drive"
+	"github.com/madeindigio/gwork/internal/auth"
+	"github.com/madeindigio/gwork/internal/testutil"
+	"github.com/madeindigio/gwork/internal/workspace/drive"
 )
 
 // driveTestMux serves a small fake Drive: a search result, a Google Doc

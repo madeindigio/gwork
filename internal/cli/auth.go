@@ -10,10 +10,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/digio/gwork-cli/internal/auth"
-	"github.com/digio/gwork-cli/internal/buildinfo"
-	"github.com/digio/gwork-cli/internal/config"
-	"github.com/digio/gwork-cli/internal/output"
+	"github.com/madeindigio/gwork/internal/auth"
+	"github.com/madeindigio/gwork/internal/buildinfo"
+	"github.com/madeindigio/gwork/internal/config"
+	"github.com/madeindigio/gwork/internal/output"
 )
 
 func newAuthCmd(a *App) *cobra.Command {

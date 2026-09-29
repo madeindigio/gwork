@@ -6,9 +6,9 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	chatapi "google.golang.org/api/chat/v1"
 
-	"github.com/digio/gwork-cli/internal/auth"
-	"github.com/digio/gwork-cli/internal/timeutil"
-	"github.com/digio/gwork-cli/internal/workspace/chat"
+	"github.com/madeindigio/gwork/internal/auth"
+	"github.com/madeindigio/gwork/internal/timeutil"
+	"github.com/madeindigio/gwork/internal/workspace/chat"
 )
 
 // Caps on chat tool inputs, so one call cannot page through an unbounded

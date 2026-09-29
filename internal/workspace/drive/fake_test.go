@@ -8,7 +8,7 @@ import (
 
 	"google.golang.org/api/option"
 
-	"github.com/digio/gwork-cli/internal/testutil"
+	"github.com/madeindigio/gwork/internal/testutil"
 )
 
 // fakeFile is a file served by fakeDrive.

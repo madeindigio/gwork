@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/digio/gwork-cli/internal/timeutil"
+	"github.com/madeindigio/gwork/internal/timeutil"
 )
 
 // SearchOptions are the filters of Search. All filters are ANDed; the query

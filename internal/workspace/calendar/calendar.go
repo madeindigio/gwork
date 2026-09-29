@@ -10,7 +10,7 @@ import (
 	calendarapi "google.golang.org/api/calendar/v3"
 	"google.golang.org/api/option"
 
-	"github.com/digio/gwork-cli/internal/timeutil"
+	"github.com/madeindigio/gwork/internal/timeutil"
 )
 
 // PrimaryCalendar is the alias of the account's primary calendar.

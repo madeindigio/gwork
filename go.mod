@@ -1,4 +1,4 @@
-module github.com/digio/gwork-cli
+module github.com/madeindigio/gwork
 
 go 1.26.0
 

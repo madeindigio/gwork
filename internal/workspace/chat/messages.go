@@ -8,7 +8,7 @@ import (
 
 	chatapi "google.golang.org/api/chat/v1"
 
-	"github.com/digio/gwork-cli/internal/timeutil"
+	"github.com/madeindigio/gwork/internal/timeutil"
 )
 
 // DefaultMaxMessages is the default number of messages returned by

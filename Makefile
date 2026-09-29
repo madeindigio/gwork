@@ -5,7 +5,7 @@
 #   make build GWORK_OAUTH_CLIENT_ID=... GWORK_OAUTH_CLIENT_SECRET=... GWORK_HOSTED_DOMAIN=digio.es
 
 BINARY  := gwork
-PKG     := github.com/digio/gwork-cli
+PKG     := github.com/madeindigio/gwork
 BI      := $(PKG)/internal/buildinfo
 BIN_DIR := bin
 

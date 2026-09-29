@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/digio/gwork-cli/internal/auth"
-	"github.com/digio/gwork-cli/internal/testutil"
+	"github.com/madeindigio/gwork/internal/auth"
+	"github.com/madeindigio/gwork/internal/testutil"
 )
 
 func calendarTestMux(t *testing.T, queries *[]url.Values) *http.ServeMux {

@@ -8,9 +8,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/digio/gwork-cli/internal/auth"
-	"github.com/digio/gwork-cli/internal/fsutil"
-	"github.com/digio/gwork-cli/internal/workspace/gmail"
+	"github.com/madeindigio/gwork/internal/auth"
+	"github.com/madeindigio/gwork/internal/fsutil"
+	"github.com/madeindigio/gwork/internal/workspace/gmail"
 )
 
 // gmailAttachmentResult is the result of "gwork gmail attachment".

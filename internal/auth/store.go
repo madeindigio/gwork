@@ -15,7 +15,7 @@ import (
 	"github.com/zalando/go-keyring"
 	"golang.org/x/oauth2"
 
-	"github.com/digio/gwork-cli/internal/config"
+	"github.com/madeindigio/gwork/internal/config"
 )
 
 // KeyringService is the service name used in the OS keyring.

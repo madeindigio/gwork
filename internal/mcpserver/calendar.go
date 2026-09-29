@@ -5,9 +5,9 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/digio/gwork-cli/internal/auth"
-	"github.com/digio/gwork-cli/internal/timeutil"
-	"github.com/digio/gwork-cli/internal/workspace/calendar"
+	"github.com/madeindigio/gwork/internal/auth"
+	"github.com/madeindigio/gwork/internal/timeutil"
+	"github.com/madeindigio/gwork/internal/workspace/calendar"
 )
 
 // calendarMaxEvents caps max_results of calendar_list_events so a single

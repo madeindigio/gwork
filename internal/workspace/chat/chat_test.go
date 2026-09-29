@@ -13,8 +13,8 @@ import (
 
 	chatapi "google.golang.org/api/chat/v1"
 
-	"github.com/digio/gwork-cli/internal/testutil"
-	"github.com/digio/gwork-cli/internal/timeutil"
+	"github.com/madeindigio/gwork/internal/testutil"
+	"github.com/madeindigio/gwork/internal/timeutil"
 )
 
 var testNow = time.Date(2026, 9, 24, 12, 0, 0, 0, time.UTC)

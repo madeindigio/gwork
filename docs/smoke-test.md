@@ -96,7 +96,7 @@ What it checks, stopping at the first failure:
 Each `--json` output is validated with `jq -e .`. Example run:
 
 ```
-gwork smoke test: /home/me/gwork-cli/bin/gwork
+gwork smoke test: /home/me/gwork/bin/gwork
 PASS  version                            v1.0.0
 PASS  invalid --output rejected
 PASS  auth-status                        account=me@digio.es services=calendar,chat,drive,gmail storage=keyring

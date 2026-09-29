@@ -12,7 +12,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"google.golang.org/api/googleapi"
 
-	"github.com/digio/gwork-cli/internal/auth"
+	"github.com/madeindigio/gwork/internal/auth"
 )
 
 func TestWhoami(t *testing.T) {

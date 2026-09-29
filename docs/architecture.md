@@ -15,7 +15,7 @@ can be opened later with "bring your own OAuth client".
 
 | Topic | Decision |
 |---|---|
-| Module / binary | `github.com/digio/gwork-cli`, binary `gwork` (`cmd/gwork`) |
+| Module / binary | `github.com/madeindigio/gwork`, binary `gwork` (`cmd/gwork`) |
 | Go | 1.26 |
 | CLI | `github.com/spf13/cobra` |
 | Google APIs | `google.golang.org/api` REST clients: `gmail/v1`, `calendar/v3`, `drive/v3`, `chat/v1` |
@@ -57,7 +57,7 @@ thin and must not duplicate logic.
 2. `GWORK_CREDENTIALS` env var (path to a Google `credentials.json`)
 3. `<configDir>/credentials.json`
 4. Client embedded at build time:
-   `-ldflags "-X github.com/digio/gwork-cli/internal/buildinfo.OAuthClientID=... -X ...OAuthClientSecret=..."`
+   `-ldflags "-X github.com/madeindigio/gwork/internal/buildinfo.OAuthClientID=... -X ...OAuthClientSecret=..."`
 
 Desktop client secrets are not confidential per Google; embedding them in the
 internal build is acceptable. They must never be committed to the repo.

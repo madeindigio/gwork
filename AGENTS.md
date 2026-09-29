@@ -4,7 +4,7 @@ Guide for humans and AI agents working on `gwork`. The design spec is
 [docs/architecture.md](docs/architecture.md); read it first. This file
 explains how the code is organized and how to extend it.
 
-`gwork` is a single Go binary (`github.com/digio/gwork-cli`, Go 1.26) giving
+`gwork` is a single Go binary (`github.com/madeindigio/gwork`, Go 1.26) giving
 **read-only** access to Gmail, Google Drive, Google Chat and Google Calendar,
 as a cobra CLI and as an MCP server (`gwork mcp`, stdio). All code, comments
 and docs are in English. License: MIT.

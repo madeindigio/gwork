@@ -8,12 +8,12 @@ import (
 
 	"google.golang.org/api/googleapi"
 
-	"github.com/digio/gwork-cli/internal/auth"
-	"github.com/digio/gwork-cli/internal/testutil"
-	"github.com/digio/gwork-cli/internal/workspace/calendar"
-	"github.com/digio/gwork-cli/internal/workspace/chat"
-	"github.com/digio/gwork-cli/internal/workspace/drive"
-	"github.com/digio/gwork-cli/internal/workspace/gmail"
+	"github.com/madeindigio/gwork/internal/auth"
+	"github.com/madeindigio/gwork/internal/testutil"
+	"github.com/madeindigio/gwork/internal/workspace/calendar"
+	"github.com/madeindigio/gwork/internal/workspace/chat"
+	"github.com/madeindigio/gwork/internal/workspace/drive"
+	"github.com/madeindigio/gwork/internal/workspace/gmail"
 )
 
 // TestFakeGoogleServesEveryAPI documents the request paths each generated

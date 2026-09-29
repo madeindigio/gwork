@@ -10,10 +10,10 @@ import (
 	"github.com/spf13/cobra"
 	"google.golang.org/api/googleapi"
 
-	"github.com/digio/gwork-cli/internal/auth"
-	"github.com/digio/gwork-cli/internal/buildinfo"
-	"github.com/digio/gwork-cli/internal/testutil"
-	"github.com/digio/gwork-cli/internal/workspace/gmail"
+	"github.com/madeindigio/gwork/internal/auth"
+	"github.com/madeindigio/gwork/internal/buildinfo"
+	"github.com/madeindigio/gwork/internal/testutil"
+	"github.com/madeindigio/gwork/internal/workspace/gmail"
 )
 
 func TestVersion(t *testing.T) {

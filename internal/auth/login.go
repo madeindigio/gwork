@@ -20,7 +20,7 @@ import (
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 
-	"github.com/digio/gwork-cli/internal/config"
+	"github.com/madeindigio/gwork/internal/config"
 )
 
 // Google endpoints used outside of the oauth2 package.

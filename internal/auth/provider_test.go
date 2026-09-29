@@ -10,7 +10,7 @@ import (
 	"github.com/zalando/go-keyring"
 	"golang.org/x/oauth2"
 
-	"github.com/digio/gwork-cli/internal/config"
+	"github.com/madeindigio/gwork/internal/config"
 )
 
 func expiredToken(email string, scopes ...string) *StoredToken {

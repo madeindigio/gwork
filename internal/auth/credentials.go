@@ -8,7 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/digio/gwork-cli/internal/buildinfo"
+	"github.com/madeindigio/gwork/internal/buildinfo"
 )
 
 // EnvCredentials is the environment variable holding a credentials.json path.

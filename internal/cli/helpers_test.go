@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/digio/gwork-cli/internal/auth"
+	"github.com/madeindigio/gwork/internal/auth"
 )
 
 // testNow is the fixed clock of test apps.

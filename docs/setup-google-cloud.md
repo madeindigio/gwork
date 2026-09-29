@@ -176,7 +176,7 @@ Build-time embedding:
 
 ```make
 # Makefile (values come from the environment / CI secrets, never from git)
-PKG := github.com/digio/gwork-cli/internal/buildinfo
+PKG := github.com/madeindigio/gwork/internal/buildinfo
 LDFLAGS := -s -w \
   -X $(PKG).OAuthClientID=$(GWORK_OAUTH_CLIENT_ID) \
   -X $(PKG).OAuthClientSecret=$(GWORK_OAUTH_CLIENT_SECRET) \
