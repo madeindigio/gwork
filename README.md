@@ -90,8 +90,8 @@ sudo install gwork /usr/local/bin/
 gwork version
 ```
 
-Release builds embed digio's OAuth client, so digio users can run
-`gwork auth login` right away. macOS binaries are signed with digio's
+Binaries never contain an OAuth client: before `gwork auth login` you need a
+`credentials.json` (see [First-time setup](#first-time-setup)). macOS binaries are signed with digio's
 Developer ID and notarized; Windows binaries are Authenticode-signed (Azure
 Trusted Signing). Linux archives are unsigned; use `checksums.txt`.
 
@@ -103,15 +103,14 @@ Requires Go 1.26+:
 go install github.com/madeindigio/gwork/cmd/gwork@latest
 ```
 
-This build has **no embedded OAuth client**: provide a `credentials.json` (see
-below).
+As with every build, provide a `credentials.json` (see below).
 
 ### From source
 
 ```sh
 git clone https://github.com/madeindigio/gwork.git && cd gwork
-make build                                   # bin/gwork, no embedded client
-make build GWORK_OAUTH_CLIENT_ID=... GWORK_OAUTH_CLIENT_SECRET=... GWORK_HOSTED_DOMAIN=digio.es
+make build                                   # bin/gwork
+make build GWORK_HOSTED_DOMAIN=digio.es      # with a default login domain hint
 ```
 
 ## First-time setup
@@ -123,7 +122,11 @@ project with the Gmail, Calendar, Drive and Chat APIs enabled.
   [docs/setup-google-cloud.md](docs/setup-google-cloud.md).
 - Workspace super admins (trusting the client, Chat settings, revocation):
   [docs/workspace-admin.md](docs/workspace-admin.md).
-- digio users with a release binary: nothing to do, the client is embedded.
+- digio users: every user needs the `credentials.json` of the digio Internal
+  Desktop client. The maintainers distribute it internally; it is never
+  committed to the repository and never compiled into the binary. Save it as
+  `<config>/credentials.json` or pass it with `--credentials` /
+  `GWORK_CREDENTIALS`.
 
 The OAuth client is resolved in this order (first match wins):
 
@@ -132,7 +135,9 @@ The OAuth client is resolved in this order (first match wins):
 3. `<config>/credentials.json` (e.g. `~/.config/gwork/credentials.json` on
    Linux, `~/Library/Application Support/gwork/credentials.json` on macOS,
    `%AppData%\gwork\credentials.json` on Windows)
-4. The client embedded at build time
+
+If none is found, commands fail with `no OAuth client configured` and a hint
+listing these three options.
 
 Then log in (a browser opens; over SSH use `--no-browser` and open the printed
 URL):
@@ -231,8 +236,8 @@ troubleshooting are in [docs/mcp.md](docs/mcp.md).
 | `GWORK_KEYRING` | `file` stores tokens in `<config>/tokens/<email>.json` (0600) instead of the OS keyring |
 | `GWORK_HOSTED_DOMAIN` | Workspace domain sent as the `hd` login hint (default: build-time value, `digio.es` in releases) |
 
-Build-time only (Makefile / release pipeline): `GWORK_OAUTH_CLIENT_ID`,
-`GWORK_OAUTH_CLIENT_SECRET`, `GWORK_HOSTED_DOMAIN`.
+Build-time only (Makefile / release pipeline): `GWORK_HOSTED_DOMAIN` (the
+default `hd` hint). The OAuth client is never a build input.
 
 ## Limitations
 
@@ -257,7 +262,7 @@ Build-time only (Makefile / release pipeline): `GWORK_OAUTH_CLIENT_ID`,
 ## Development
 
 ```sh
-make build        # bin/gwork (add GWORK_OAUTH_* to embed a client)
+make build        # bin/gwork (GWORK_HOSTED_DOMAIN=... sets the login hint)
 make test         # go test -race ./...
 make lint         # golangci-lint v2
 make fmt vet      # gofmt -s, go vet
@@ -273,8 +278,7 @@ make smoke        # smoke test against the real tenant (docs/smoke-test.md)
 - The backlog lives in the repository under `docs/.pmngr` and is managed with
   gintrack (project key `GWORK`).
 - Releases: pushing a tag `v*` runs `.github/workflows/release.yml`, which
-  builds every platform with the OAuth client embedded from repository
-  secrets, signs and notarizes macOS, Authenticode-signs Windows and publishes
+  builds every platform (without any OAuth client), signs and notarizes macOS, Authenticode-signs Windows and publishes
   a GitHub release with `checksums.txt`. Required secrets and variables:
   [docs/release.md](docs/release.md). GoReleaser (`make snapshot`) is only
   used for local, unsigned snapshots.

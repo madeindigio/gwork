@@ -99,7 +99,7 @@ func NewRootCmd(a *App) *cobra.Command {
 
 	f := root.PersistentFlags()
 	f.StringVar(&a.Flags.Account, "account", "", "account email to use (default: $GWORK_ACCOUNT or the default account)")
-	f.StringVar(&a.Flags.Credentials, "credentials", "", "path to an OAuth client credentials.json (default: $GWORK_CREDENTIALS, <config>/credentials.json, embedded)")
+	f.StringVar(&a.Flags.Credentials, "credentials", "", "path to an OAuth client credentials.json (default: $GWORK_CREDENTIALS, <config>/credentials.json)")
 	f.StringVarP(&a.Flags.Output, "output", "o", "text", "output format: text or json")
 	f.BoolVar(&a.Flags.JSON, "json", false, "shortcut for --output json")
 	f.DurationVar(&a.Flags.Timeout, "timeout", DefaultTimeout, "timeout for API commands (0 disables)")

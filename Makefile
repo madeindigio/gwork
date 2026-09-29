@@ -1,8 +1,9 @@
-# gwork build tooling. Build recipes are silenced (@) so embedded secrets
-# never appear in CI logs.
+# gwork build tooling.
 #
-# The OAuth client can be embedded at build time (never commit it):
-#   make build GWORK_OAUTH_CLIENT_ID=... GWORK_OAUTH_CLIENT_SECRET=... GWORK_HOSTED_DOMAIN=digio.es
+# The OAuth client is never compiled into the binary: users provide a
+# credentials.json at runtime (docs/setup-google-cloud.md). Only the default
+# login domain hint can be set at build time:
+#   make build GWORK_HOSTED_DOMAIN=digio.es
 
 BINARY  := gwork
 PKG     := github.com/madeindigio/gwork
@@ -13,16 +14,12 @@ VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null)
 DATE    ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 
-GWORK_OAUTH_CLIENT_ID     ?=
-GWORK_OAUTH_CLIENT_SECRET ?=
-GWORK_HOSTED_DOMAIN       ?=
+GWORK_HOSTED_DOMAIN ?=
 
 LDFLAGS := -s -w \
 	-X $(BI).Version=$(VERSION) \
 	-X $(BI).Commit=$(COMMIT) \
 	-X $(BI).Date=$(DATE) \
-	-X $(BI).OAuthClientID=$(GWORK_OAUTH_CLIENT_ID) \
-	-X $(BI).OAuthClientSecret=$(GWORK_OAUTH_CLIENT_SECRET) \
 	-X $(BI).HostedDomain=$(GWORK_HOSTED_DOMAIN)
 
 # Uses an installed golangci-lint when available, otherwise runs the pinned version.

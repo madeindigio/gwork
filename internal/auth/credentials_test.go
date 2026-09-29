@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -27,7 +28,7 @@ func TestResolveCredentialsPrecedence(t *testing.T) {
 	}
 	writeCreds(t, cfgDir, CredentialsFileName, "config")
 
-	in := CredentialInputs{FlagPath: flag, EnvPath: env, ConfigDir: cfgDir, EmbeddedID: "emb", EmbeddedSecret: "embs"}
+	in := CredentialInputs{FlagPath: flag, EnvPath: env, ConfigDir: cfgDir}
 	steps := []struct {
 		wantID, wantSource string
 		drop               func()
@@ -35,7 +36,6 @@ func TestResolveCredentialsPrecedence(t *testing.T) {
 		{"flag", SourceFlag, func() { in.FlagPath = "" }},
 		{"env", SourceEnv, func() { in.EnvPath = "" }},
 		{"config", SourceConfig, func() { in.ConfigDir = t.TempDir() }},
-		{"emb", SourceEmbedded, func() { in.EmbeddedID = "" }},
 	}
 	for _, s := range steps {
 		c, err := ResolveCredentials(in)
@@ -51,15 +51,20 @@ func TestResolveCredentialsPrecedence(t *testing.T) {
 	if !errors.Is(err, ErrNoCredentials) {
 		t.Fatalf("expected ErrNoCredentials, got %v", err)
 	}
-	if HintFor(err) == "" {
-		t.Fatal("expected a hint")
+	hint := HintFor(err)
+	for _, want := range []string{"--credentials", EnvCredentials, filepath.Join(in.ConfigDir, CredentialsFileName), "docs/setup-google-cloud.md"} {
+		if !strings.Contains(hint, want) {
+			t.Errorf("hint %q does not mention %q", hint, want)
+		}
 	}
 }
 
 func TestResolveCredentialsExplicitPathMustExist(t *testing.T) {
-	_, err := ResolveCredentials(CredentialInputs{FlagPath: "/nonexistent/creds.json", EmbeddedID: "a", EmbeddedSecret: "b"})
+	cfgDir := t.TempDir()
+	writeCreds(t, cfgDir, CredentialsFileName, "config")
+	_, err := ResolveCredentials(CredentialInputs{FlagPath: "/nonexistent/creds.json", ConfigDir: cfgDir})
 	if err == nil {
-		t.Fatal("an explicit missing path must not fall through to the embedded client")
+		t.Fatal("an explicit missing path must not fall through to the config dir")
 	}
 }
 

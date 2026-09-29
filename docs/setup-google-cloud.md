@@ -47,8 +47,8 @@ gcloud config set project digio-gwork-prod
 
 Use two projects, for example `digio-gwork-dev` and `digio-gwork-prod`:
 
-- The **prod** client is the one embedded in released binaries (GoReleaser/CI)
-  and trusted by the Workspace admin. Change it rarely.
+- The **prod** client is the one distributed internally to digio users (as
+  `credentials.json`) and trusted by the Workspace admin. Change it rarely.
 - The **dev** client is for local development and experiments (new scopes,
   testing error paths, deleting/recreating clients) without breaking users.
 - Each project has its own Google Auth Platform config, clients and API quotas.
@@ -170,45 +170,36 @@ Resolution order (first match wins):
 2. Env var: `export GWORK_CREDENTIALS=/path/to/credentials.json`
 3. File: `<configDir>/credentials.json` (e.g. `~/.config/gwork/credentials.json`
    on Linux, where `<configDir>` follows XDG / `os.UserConfigDir`)
-4. Embedded at build time via ldflags (used for internal/released builds).
 
-Build-time embedding:
+If none is found, gwork fails with `no OAuth client configured` and a hint
+listing these three options.
 
-```make
-# Makefile (values come from the environment / CI secrets, never from git)
-PKG := github.com/madeindigio/gwork/internal/buildinfo
-LDFLAGS := -s -w \
-  -X $(PKG).OAuthClientID=$(GWORK_OAUTH_CLIENT_ID) \
-  -X $(PKG).OAuthClientSecret=$(GWORK_OAUTH_CLIENT_SECRET) \
-  -X $(PKG).HostedDomain=digio.es
+The client is never compiled into the binary, and no build (local, GoReleaser
+or CI) takes it as an input. Every user needs the `credentials.json` of the
+digio Internal Desktop client: the maintainers distribute it internally
+(never through the repository), and each user places it at
+`<configDir>/credentials.json` or passes it with `--credentials` /
+`GWORK_CREDENTIALS`.
 
-build:
-	go build -ldflags "$(LDFLAGS)" -o bin/gwork ./cmd/gwork
-```
-
-```sh
-export GWORK_OAUTH_CLIENT_ID=$(jq -r .installed.client_id ~/.config/gwork/credentials.json)
-export GWORK_OAUTH_CLIENT_SECRET=$(jq -r .installed.client_secret ~/.config/gwork/credentials.json)
-make build
-```
-
-For GoReleaser, set the same `-X` flags in `builds[].ldflags` reading
-`{{ .Env.GWORK_OAUTH_CLIENT_ID }}` / `{{ .Env.GWORK_OAUTH_CLIENT_SECRET }}` from
-CI secrets. `HostedDomain` only adds the `hd=digio.es` hint to the login URL
+The only login-related build-time value is the hosted domain
+(`make build GWORK_HOSTED_DOMAIN=digio.es`, or the `GWORK_HOSTED_DOMAIN`
+release secret). `HostedDomain` only adds the `hd=digio.es` hint to the login URL
 (it pre-selects the account); enforcement comes from the Internal audience.
 It can be overridden with `GWORK_HOSTED_DOMAIN`.
 
 ### 4.2 Is the client secret secret?
 
 Google's docs for installed apps: "the client secret is obviously not treated
-as a secret" [R11], and installed apps "cannot keep secrets" [R10]. Embedding it
-in the internal binary is therefore acceptable. Still:
+as a secret" [R11], and installed apps "cannot keep secrets" [R10]. Still,
+gwork treats it as internal material:
 
 - **Never commit** `credentials.json`, the client ID/secret, or tokens to the
-  repo (keep `credentials*.json` in `.gitignore`; inject via CI secrets).
+  repo (keep `credentials*.json` in `.gitignore`), and never compile it into a
+  build. Share it with users only through internal channels.
 - If it leaks, anyone could impersonate the `gwork` app in a consent screen
   (only to `digio.es` users, since the app is Internal). Rotate by adding a new
-  secret / new client in **Clients**, rebuilding, then deleting the old one.
+  secret / new client in **Clients**, distributing the new `credentials.json`
+  to users, then deleting the old one.
 
 ## 5. Google Chat API "Configuration" page: required?
 

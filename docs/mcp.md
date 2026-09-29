@@ -144,7 +144,7 @@ works: `npx @modelcontextprotocol/inspector gwork mcp`.
 | `--account` | `$GWORK_ACCOUNT`, then the default account | Google account whose token is used. |
 | `--timeout` | `2m` | Bound for each tool call. The CLI-wide `1m` default does not apply to `gwork mcp`: without `--timeout` each call gets 2m; an explicit value replaces it and `--timeout 0` disables the per-call timeout. |
 | `--log-level` | `info` | stderr log level: `debug`, `info`, `warn`, `error`. |
-| `--credentials` | see README | OAuth client, only needed if the build has no embedded client. |
+| `--credentials` | see README | Path to the OAuth client `credentials.json`; not needed when it is at `<config>/credentials.json` or `GWORK_CREDENTIALS` is set. |
 
 ## Tool reference
 

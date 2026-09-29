@@ -23,8 +23,10 @@ results.
 
 - The binary under test: the release candidate (`make snapshot`, then
   `dist/gwork_<os>_<arch>*/gwork`) or `make build` with the same
-  `GWORK_OAUTH_CLIENT_ID` / `GWORK_OAUTH_CLIENT_SECRET` /
   `GWORK_HOSTED_DOMAIN` as the release.
+- The digio Internal Desktop client `credentials.json` (distributed
+  internally by the maintainers) at `<config>/credentials.json`, or passed
+  with `--credentials` / `GWORK_CREDENTIALS`.
 - `jq` and `bash` 4+ (macOS: `brew install bash jq`).
 - A `digio.es` account with at least: one mail in the last 30 days (ideally one
   with an attachment), a calendar event in the last/next 30 days, a Google Doc
@@ -34,7 +36,7 @@ results.
 
 ```sh
 export GWORK_BIN=$PWD/dist/gwork_linux_amd64_v1/gwork   # or bin/gwork
-$GWORK_BIN version --json     # check version, commit and "embedded_client": true
+$GWORK_BIN version --json     # check version and commit
 ```
 
 ## 1. Interactive checks

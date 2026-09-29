@@ -12,9 +12,11 @@ name: Release
 #   release  : one GitHub release with every archive, checksums.txt and the
 #              changes since the previous tag.
 #
+# Release binaries never embed the OAuth client: users supply their own
+# credentials.json (--credentials, GWORK_CREDENTIALS or <config>/credentials.json).
+#
 # Repository configuration (see docs/release.md):
-#   secrets  GWORK_OAUTH_CLIENT_ID, GWORK_OAUTH_CLIENT_SECRET,
-#            GWORK_HOSTED_DOMAIN   embedded OAuth Desktop client (ldflags)
+#   secrets  GWORK_HOSTED_DOMAIN   default `hd` login hint (optional, ldflags)
 #            MACOS_SIGNING_BUNDLE  base64 .tar.gz of ~/DIGIO_Software_Signing_Keys
 #                                  (Developer ID .p12 files + kvagerc env file)
 #   vars     AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID,
@@ -54,12 +56,10 @@ jobs:
 
       - name: Check required secrets
         env:
-          GWORK_OAUTH_CLIENT_ID: ${{ secrets.GWORK_OAUTH_CLIENT_ID }}
-          GWORK_OAUTH_CLIENT_SECRET: ${{ secrets.GWORK_OAUTH_CLIENT_SECRET }}
           MACOS_SIGNING_BUNDLE: ${{ secrets.MACOS_SIGNING_BUNDLE }}
         run: |
           missing=0
-          for name in GWORK_OAUTH_CLIENT_ID GWORK_OAUTH_CLIENT_SECRET MACOS_SIGNING_BUNDLE; do
+          for name in MACOS_SIGNING_BUNDLE; do
             if [ -z "${!name}" ]; then
               echo "::error::secret $name is not set"
               missing=1
@@ -113,8 +113,6 @@ jobs:
           CGO_ENABLED: "0"
           GOOS: linux
           GOARCH: ${{ matrix.goarch }}
-          GWORK_OAUTH_CLIENT_ID: ${{ secrets.GWORK_OAUTH_CLIENT_ID }}
-          GWORK_OAUTH_CLIENT_SECRET: ${{ secrets.GWORK_OAUTH_CLIENT_SECRET }}
           GWORK_HOSTED_DOMAIN: ${{ secrets.GWORK_HOSTED_DOMAIN }}
         run: |
           set -euo pipefail
@@ -124,8 +122,6 @@ jobs:
             -X $bi.Version=${{ steps.version.outputs.version }} \
             -X $bi.Commit=${{ steps.version.outputs.commit }} \
             -X $bi.Date=${{ steps.version.outputs.date }} \
-            -X $bi.OAuthClientID=$GWORK_OAUTH_CLIENT_ID \
-            -X $bi.OAuthClientSecret=$GWORK_OAUTH_CLIENT_SECRET \
             -X $bi.HostedDomain=$GWORK_HOSTED_DOMAIN" \
             -o dist/gwork ./cmd/gwork
 
@@ -188,8 +184,6 @@ jobs:
         env:
           CGO_ENABLED: "0"
           GOOS: windows
-          GWORK_OAUTH_CLIENT_ID: ${{ secrets.GWORK_OAUTH_CLIENT_ID }}
-          GWORK_OAUTH_CLIENT_SECRET: ${{ secrets.GWORK_OAUTH_CLIENT_SECRET }}
           GWORK_HOSTED_DOMAIN: ${{ secrets.GWORK_HOSTED_DOMAIN }}
         run: |
           set -euo pipefail
@@ -200,8 +194,6 @@ jobs:
               -X $bi.Version=${{ steps.version.outputs.version }} \
               -X $bi.Commit=${{ steps.version.outputs.commit }} \
               -X $bi.Date=${{ steps.version.outputs.date }} \
-              -X $bi.OAuthClientID=$GWORK_OAUTH_CLIENT_ID \
-              -X $bi.OAuthClientSecret=$GWORK_OAUTH_CLIENT_SECRET \
               -X $bi.HostedDomain=$GWORK_HOSTED_DOMAIN" \
               -o "unsigned/gwork-$arch.exe" ./cmd/gwork
           done
@@ -306,8 +298,6 @@ jobs:
         env:
           CGO_ENABLED: "0"
           GOOS: darwin
-          GWORK_OAUTH_CLIENT_ID: ${{ secrets.GWORK_OAUTH_CLIENT_ID }}
-          GWORK_OAUTH_CLIENT_SECRET: ${{ secrets.GWORK_OAUTH_CLIENT_SECRET }}
           GWORK_HOSTED_DOMAIN: ${{ secrets.GWORK_HOSTED_DOMAIN }}
         run: |
           set -euo pipefail
@@ -318,8 +308,6 @@ jobs:
               -X $bi.Version=${{ steps.version.outputs.version }} \
               -X $bi.Commit=${{ steps.version.outputs.commit }} \
               -X $bi.Date=${{ steps.version.outputs.date }} \
-              -X $bi.OAuthClientID=$GWORK_OAUTH_CLIENT_ID \
-              -X $bi.OAuthClientSecret=$GWORK_OAUTH_CLIENT_SECRET \
               -X $bi.HostedDomain=$GWORK_HOSTED_DOMAIN" \
               -o "dist/gwork-$arch" ./cmd/gwork
           done

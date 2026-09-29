@@ -12,7 +12,10 @@ pipeline mirrors `digiogithub/git-in-track`:
 | `macos` | macos | `gwork_<v>_darwin_{arm64,amd64}.zip`, Developer ID signed (hardened runtime) and notarized |
 | `release` | ubuntu | GitHub release with all archives and `checksums.txt` |
 
-Every build embeds the OAuth Desktop client with `-X` ldflags.
+No build contains the OAuth client. Users supply the Internal Desktop client's
+`credentials.json` at runtime (`<config>/credentials.json`, `--credentials` or
+`GWORK_CREDENTIALS`); see [setup](setup-google-cloud.md). The only build-time
+value besides version, commit and date is the optional `GWORK_HOSTED_DOMAIN`.
 
 ## Repository configuration
 
@@ -20,9 +23,7 @@ Secrets (Settings > Secrets and variables > Actions > Secrets):
 
 | Secret | Value |
 |---|---|
-| `GWORK_OAUTH_CLIENT_ID` | `client_id` of the Internal Desktop OAuth client ([setup](setup-google-cloud.md)) |
-| `GWORK_OAUTH_CLIENT_SECRET` | its `client_secret` |
-| `GWORK_HOSTED_DOMAIN` | `digio.es` (login `hd` hint) |
+| `GWORK_HOSTED_DOMAIN` | optional; `digio.es` (default login `hd` hint, set with `-X` ldflags) |
 | `MACOS_SIGNING_BUNDLE` | base64 `.tar.gz` of `~/DIGIO_Software_Signing_Keys` (Developer ID `.p12` files + `kvagerc` with passwords and notary credentials), same bundle as git-in-track |
 
 ```sh

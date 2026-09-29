@@ -30,7 +30,7 @@ can be opened later with "bring your own OAuth client".
 
 ```
 cmd/gwork/main.go            entry point, calls cli.Execute()
-internal/buildinfo/          version, commit, embedded OAuth client (ldflags)
+internal/buildinfo/          version, commit, date, default hosted domain (ldflags)
 internal/config/             config dir (XDG / os.UserConfigDir), config.json, accounts
 internal/auth/               OAuth config, login flow, token store, persisting TokenSource,
                              scope registry, auth error classification
@@ -56,11 +56,15 @@ thin and must not duplicate logic.
 1. `--credentials <path>` flag
 2. `GWORK_CREDENTIALS` env var (path to a Google `credentials.json`)
 3. `<configDir>/credentials.json`
-4. Client embedded at build time:
-   `-ldflags "-X github.com/madeindigio/gwork/internal/buildinfo.OAuthClientID=... -X ...OAuthClientSecret=..."`
 
-Desktop client secrets are not confidential per Google; embedding them in the
-internal build is acceptable. They must never be committed to the repo.
+If none is found, the error lists these three options and points to
+`docs/setup-google-cloud.md`.
+
+The OAuth client is never compiled into the binary (no ldflags, no build
+secrets). Every user needs the `credentials.json` of the digio Internal
+Desktop client, distributed internally by the maintainers. Desktop client
+secrets are not confidential per Google, but they must never be committed to
+the repo.
 
 ### Login flow (`gwork auth login [--services gmail,calendar,drive,chat]`)
 

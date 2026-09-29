@@ -13,7 +13,7 @@ and docs are in English. License: MIT.
 
 ```
 cmd/gwork/main.go             entry point: os.Exit(cli.Execute())
-internal/buildinfo/           Version, Commit, Date, embedded OAuth client, HostedDomain (ldflags)
+internal/buildinfo/           Version, Commit, Date, HostedDomain (ldflags)
 internal/config/              config dir (GWORK_CONFIG_DIR | os.UserConfigDir()/gwork), config.json
 internal/output/              Printer (text|json), Table, KeyValues, WriteJSON, Ellipsize,
                               DateTime, SameDay, Person, Bytes (text formatting helpers),
@@ -267,9 +267,12 @@ func registerGmail(s *mcp.Server, deps Deps) {
 | `GWORK_KEYRING=file` | store tokens in `<config>/tokens/<email>.json` (0600) instead of the OS keyring |
 | `GWORK_HOSTED_DOMAIN` | `hd` hint at login (default: build-time value) |
 
-Never commit OAuth client secrets, tokens or `credentials*.json`. The
-internal build embeds the client via `make build GWORK_OAUTH_CLIENT_ID=...
-GWORK_OAUTH_CLIENT_SECRET=...`.
+Never commit OAuth client secrets, tokens or `credentials*.json`. The OAuth
+client is never compiled into the binary: every user needs the
+`credentials.json` of the digio Internal Desktop client (distributed
+internally by the maintainers), placed at `<config>/credentials.json` or
+passed with `--credentials` / `GWORK_CREDENTIALS`. The only build-time
+setting besides version metadata is `make build GWORK_HOSTED_DOMAIN=...`.
 
 ## Backlog workflow (gintrack)
 

@@ -7,8 +7,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-
-	"github.com/madeindigio/gwork/internal/buildinfo"
 )
 
 // EnvCredentials is the environment variable holding a credentials.json path.
@@ -19,19 +17,18 @@ const CredentialsFileName = "credentials.json"
 
 // Credential sources, reported by ClientCredentials.Source.
 const (
-	SourceFlag     = "flag"
-	SourceEnv      = "env"
-	SourceConfig   = "config"
-	SourceEmbedded = "embedded"
+	SourceFlag   = "flag"
+	SourceEnv    = "env"
+	SourceConfig = "config"
 )
 
 // ClientCredentials is an OAuth Desktop client.
 type ClientCredentials struct {
 	ClientID     string `json:"client_id"`
 	ClientSecret string `json:"client_secret"`
-	// Source says where the client came from (flag, env, config, embedded).
+	// Source says where the client came from (flag, env, config).
 	Source string `json:"source"`
-	// Path is the file the client was read from, empty when embedded.
+	// Path is the file the client was read from.
 	Path string `json:"path,omitempty"`
 }
 
@@ -43,19 +40,15 @@ type CredentialInputs struct {
 	EnvPath string
 	// ConfigDir is the gwork config directory.
 	ConfigDir string
-	// EmbeddedID and EmbeddedSecret are the client embedded at build time.
-	EmbeddedID, EmbeddedSecret string
 }
 
-// DefaultCredentialInputs fills CredentialInputs from the environment and
-// the build-time embedded client.
+// DefaultCredentialInputs fills CredentialInputs from the flag value, the
+// environment and the config directory.
 func DefaultCredentialInputs(flagPath, configDir string) CredentialInputs {
 	return CredentialInputs{
-		FlagPath:       flagPath,
-		EnvPath:        os.Getenv(EnvCredentials),
-		ConfigDir:      configDir,
-		EmbeddedID:     buildinfo.OAuthClientID,
-		EmbeddedSecret: buildinfo.OAuthClientSecret,
+		FlagPath:  flagPath,
+		EnvPath:   os.Getenv(EnvCredentials),
+		ConfigDir: configDir,
 	}
 }
 
@@ -64,8 +57,8 @@ func DefaultCredentialInputs(flagPath, configDir string) CredentialInputs {
 //  1. --credentials <path>
 //  2. GWORK_CREDENTIALS
 //  3. <configDir>/credentials.json
-//  4. the client embedded at build time
 //
+// The OAuth client is never compiled into the binary.
 // An explicitly given path (flag or env) that cannot be read is an error;
 // it never silently falls through to the next source.
 func ResolveCredentials(in CredentialInputs) (*ClientCredentials, error) {
@@ -84,9 +77,6 @@ func ResolveCredentials(in CredentialInputs) (*ClientCredentials, error) {
 		if !errors.Is(err, fs.ErrNotExist) {
 			return nil, err
 		}
-	}
-	if in.EmbeddedID != "" && in.EmbeddedSecret != "" {
-		return &ClientCredentials{ClientID: in.EmbeddedID, ClientSecret: in.EmbeddedSecret, Source: SourceEmbedded}, nil
 	}
 	return nil, &Error{
 		Kind:    ErrNoCredentials,

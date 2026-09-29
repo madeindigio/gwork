@@ -29,6 +29,17 @@ func TestVersion(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &v); err != nil || v.Version != buildinfo.Version {
 		t.Fatalf("json %q: %v", out, err)
 	}
+	var fields map[string]any
+	if err := json.Unmarshal([]byte(out), &fields); err != nil {
+		t.Fatal(err)
+	}
+	for k := range fields {
+		switch k {
+		case "version", "commit", "date", "go", "os", "arch":
+		default:
+			t.Fatalf("unexpected version field %q in %q", k, out)
+		}
+	}
 	out, _, _ = runCLI(t, nil, "version", "-o", "json")
 	if !strings.HasPrefix(out, "{") {
 		t.Fatalf("-o json not honored: %q", out)

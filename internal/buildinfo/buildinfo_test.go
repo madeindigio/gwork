@@ -18,17 +18,3 @@ func TestString(t *testing.T) {
 		t.Fatalf("UserAgent() = %q", UserAgent())
 	}
 }
-
-func TestHasEmbeddedClient(t *testing.T) {
-	oldID, oldSecret := OAuthClientID, OAuthClientSecret
-	t.Cleanup(func() { OAuthClientID, OAuthClientSecret = oldID, oldSecret })
-
-	OAuthClientID, OAuthClientSecret = "", ""
-	if HasEmbeddedClient() {
-		t.Fatal("expected no embedded client")
-	}
-	OAuthClientID, OAuthClientSecret = "id", "secret"
-	if !HasEmbeddedClient() {
-		t.Fatal("expected embedded client")
-	}
-}

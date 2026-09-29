@@ -6,10 +6,10 @@
 # Official releases do NOT use this file: pushing a tag v* runs
 # .github/workflows/release.yml, which builds, signs (macOS Developer ID +
 # notarization, Windows Azure Trusted Signing) and publishes (docs/release.md).
-# This config is kept for local, unsigned snapshots. GWORK_OAUTH_CLIENT_ID,
-# GWORK_OAUTH_CLIENT_SECRET and GWORK_HOSTED_DOMAIN are read from the
-# environment when set. When they are unset, the binaries are built without an embedded OAuth client and need
-# --credentials / GWORK_CREDENTIALS / <config>/credentials.json at login.
+# This config is kept for local, unsigned snapshots. GWORK_HOSTED_DOMAIN is
+# read from the environment when set. The OAuth client is never compiled in:
+# users provide it with --credentials / GWORK_CREDENTIALS /
+# <config>/credentials.json.
 version: 2
 
 project_name: gwork
@@ -36,8 +36,6 @@ builds:
       - -X github.com/madeindigio/gwork/internal/buildinfo.Version={{ .Version }}
       - -X github.com/madeindigio/gwork/internal/buildinfo.Commit={{ .ShortCommit }}
       - -X github.com/madeindigio/gwork/internal/buildinfo.Date={{ .Date }}
-      - -X github.com/madeindigio/gwork/internal/buildinfo.OAuthClientID={{ envOrDefault "GWORK_OAUTH_CLIENT_ID" "" }}
-      - -X github.com/madeindigio/gwork/internal/buildinfo.OAuthClientSecret={{ envOrDefault "GWORK_OAUTH_CLIENT_SECRET" "" }}
       - -X github.com/madeindigio/gwork/internal/buildinfo.HostedDomain={{ envOrDefault "GWORK_HOSTED_DOMAIN" "" }}
     mod_timestamp: "{{ .CommitTimestamp }}"
 
