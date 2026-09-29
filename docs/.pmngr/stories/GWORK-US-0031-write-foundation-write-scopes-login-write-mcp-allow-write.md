@@ -2,14 +2,15 @@
 id: GWORK-US-0031
 type: story
 title: "Write foundation: write scopes, login --write, mcp --allow-write, addWriteTool"
-status: in_progress
+status: done
 priority: high
 parent: GWORK-EP-0010
 author: mcp
 labels: [write, auth, mcp]
 created: 2026-09-29T22:32:28Z
-updated: 2026-09-29T22:32:35Z
+updated: 2026-09-29T22:38:25Z
 started: 2026-09-29T22:32:35Z
+closed: 2026-09-29T22:38:25Z
 ---
 
 ## Description
