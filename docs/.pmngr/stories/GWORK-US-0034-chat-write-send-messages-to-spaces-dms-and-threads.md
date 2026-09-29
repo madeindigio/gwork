@@ -2,14 +2,15 @@
 id: GWORK-US-0034
 type: story
 title: "Chat write: send messages to spaces, DMs and threads"
-status: in_progress
+status: done
 priority: high
 parent: GWORK-EP-0010
 author: mcp
 labels: [write, chat]
 created: 2026-09-29T22:32:28Z
-updated: 2026-09-29T22:38:25Z
+updated: 2026-09-29T22:50:37Z
 started: 2026-09-29T22:38:25Z
+closed: 2026-09-29T22:50:37Z
 ---
 
 ## Description
