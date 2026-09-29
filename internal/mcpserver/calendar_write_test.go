@@ -145,6 +145,28 @@ func TestCalendarWriteTools(t *testing.T) {
 			t.Fatalf("res %v calls %v", res, calls[n:])
 		}
 	})
+	t.Run("duration and summary validation", func(t *testing.T) {
+		n := len(calls)
+		for _, tc := range []struct {
+			tool string
+			args map[string]any
+		}{
+			{"calendar_create_event", map[string]any{"summary": "x", "start": "+1d", "duration_minutes": -5}},
+			{"calendar_create_event", map[string]any{"summary": "x", "start": "+1d", "end": "+2d", "duration_minutes": 30}},
+			{"calendar_create_event", map[string]any{"summary": "x", "start": "+1d", "all_day": true, "duration_minutes": 30}},
+			{"calendar_update_event", map[string]any{"event_id": "e1", "start": "+1d", "duration_minutes": -5}},
+			{"calendar_update_event", map[string]any{"event_id": "e1", "start": "+1d", "end": "+2d", "duration_minutes": 30}},
+			{"calendar_update_event", map[string]any{"event_id": "e1", "summary": "  "}},
+		} {
+			_, res := callTool[calendarEventOutput](t, cs, tc.tool, tc.args)
+			if !res.IsError {
+				t.Errorf("%s %v: expected error", tc.tool, tc.args)
+			}
+		}
+		if len(calls) != n {
+			t.Errorf("unexpected calls %v", calls[n:])
+		}
+	})
 	t.Run("update", func(t *testing.T) {
 		out, res := callTool[calendarEventOutput](t, cs, "calendar_update_event", map[string]any{
 			"event_id": "e1", "summary": "New", "add_attendees": []string{"bob@digio.es"}, "remove_attendees": []string{"ana@digio.es"},

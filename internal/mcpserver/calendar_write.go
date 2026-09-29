@@ -113,6 +113,15 @@ func registerCalendarWrite(s *mcp.Server, deps Deps) {
 			AllDay: in.AllDay, TimeZone: in.TimeZone, Attendees: in.Attendees, Meet: in.AddMeet,
 			Visibility: in.Visibility, Transparency: in.Transparency,
 		}
+		if in.DurationMinutes < 0 {
+			return calendarEventOutput{}, errors.New("duration_minutes must be positive")
+		}
+		if in.DurationMinutes != 0 && in.End != "" {
+			return calendarEventOutput{}, errors.New("use either end or duration_minutes, not both")
+		}
+		if in.DurationMinutes != 0 && in.AllDay {
+			return calendarEventOutput{}, errors.New("duration_minutes cannot be used with all_day; use end (exclusive date)")
+		}
 		switch {
 		case in.End != "":
 			if ev.End, err = timeutil.Parse(in.End, now); err != nil {
@@ -161,6 +170,15 @@ func registerCalendarWrite(s *mcp.Server, deps Deps) {
 				return calendarEventOutput{}, fmt.Errorf("start: %w", err)
 			}
 			p.Start = &s
+		}
+		if in.DurationMinutes < 0 {
+			return calendarEventOutput{}, errors.New("duration_minutes must be positive")
+		}
+		if in.DurationMinutes != 0 && in.End != "" {
+			return calendarEventOutput{}, errors.New("use either end or duration_minutes, not both")
+		}
+		if in.DurationMinutes != 0 && in.AllDay != nil && *in.AllDay {
+			return calendarEventOutput{}, errors.New("duration_minutes cannot be used with all_day; use end (exclusive date)")
 		}
 		switch {
 		case in.End != "":
