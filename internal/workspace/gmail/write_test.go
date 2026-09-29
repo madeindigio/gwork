@@ -453,3 +453,90 @@ func TestWriteErrorsKeepContext(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+func TestResolveLabelAmbiguity(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /gmail/v1/users/me/labels", func(w http.ResponseWriter, r *http.Request) {
+		testutil.WriteJSON(t, w, map[string]any{"labels": []any{
+			map[string]any{"id": "Label_1", "name": "Work"},
+			map[string]any{"id": "Label_2", "name": "work"},
+			map[string]any{"id": "Label_3", "name": "Home"},
+			map[string]any{"id": "Label_4", "name": "HOME"},
+			map[string]any{"id": "Label_5", "name": "Solo"},
+		}})
+	})
+	mux.HandleFunc("POST /gmail/v1/users/me/messages/m1/modify", func(w http.ResponseWriter, r *http.Request) {
+		testutil.WriteJSON(t, w, map[string]any{"id": "m1"})
+	})
+	opts := testutil.FakeGoogle(t, mux)
+	ctx := context.Background()
+	for _, c := range []struct{ ref, want string }{{"work", "Label_2"}, {"Work", "Label_1"}, {"SOLO", "Label_5"}, {"Label_3", "Label_3"}} {
+		res, err := ModifyLabels(ctx, Target{MessageID: "m1"}, []string{c.ref}, nil, opts...)
+		if err != nil {
+			t.Fatalf("%s: %v", c.ref, err)
+		}
+		if !reflect.DeepEqual(res.Added, []string{c.want}) {
+			t.Errorf("%s resolved to %v, want %s", c.ref, res.Added, c.want)
+		}
+	}
+	_, err := ModifyLabels(ctx, Target{MessageID: "m1"}, []string{"hOmE"}, nil, opts...)
+	if err == nil || !strings.Contains(err.Error(), "ambiguous label") || !strings.Contains(err.Error(), "Label_3, Label_4") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestModifyResultJSONEmptySlices(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /gmail/v1/users/me/threads/t1/trash", func(w http.ResponseWriter, r *http.Request) {
+		testutil.WriteJSON(t, w, map[string]any{"id": "t1"})
+	})
+	res, err := Trash(context.Background(), Target{ThreadID: "t1"}, testutil.FakeGoogle(t, mux)...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := json.Marshal(res)
+	for _, k := range []string{`"label_ids":[]`, `"added_label_ids":[]`, `"removed_label_ids":[]`} {
+		if !strings.Contains(string(b), k) {
+			t.Errorf("%s lacks %s", b, k)
+		}
+	}
+}
+
+// TestReplyRecipientsUseProfile goes through the public path: the account
+// address comes from users.getProfile, also for a plain reply.
+func TestReplyRecipientsUseProfile(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /gmail/v1/users/me/profile", func(w http.ResponseWriter, r *http.Request) {
+		testutil.WriteJSON(t, w, map[string]any{"emailAddress": "Me@digio.es"})
+	})
+	mux.HandleFunc("GET /gmail/v1/users/me/messages/theirs", func(w http.ResponseWriter, r *http.Request) {
+		testutil.WriteJSON(t, w, map[string]any{"id": "theirs", "threadId": "t1", "payload": map[string]any{"headers": headers(
+			"Subject", "Plan", "From", "Ana <ana@example.com>", "To", "me@digio.es, bob@example.com")}})
+	})
+	mux.HandleFunc("GET /gmail/v1/users/me/messages/mine", func(w http.ResponseWriter, r *http.Request) {
+		testutil.WriteJSON(t, w, map[string]any{"id": "mine", "threadId": "t2", "payload": map[string]any{"headers": headers(
+			"Subject", "Plan", "From", "me@digio.es", "To", "bob@example.com")}})
+	})
+	opts := testutil.FakeGoogle(t, mux)
+	cases := []struct {
+		name string
+		in   ComposeInput
+		to   []string
+		cc   []string
+	}{
+		{"reply to someone else", ComposeInput{ReplyToMessageID: "theirs"}, []string{"Ana <ana@example.com>"}, []string{}},
+		{"reply to own message", ComposeInput{ReplyToMessageID: "mine"}, []string{"bob@example.com"}, []string{}},
+		{"reply all to someone else", ComposeInput{ReplyToMessageID: "theirs", ReplyAll: true}, []string{"Ana <ana@example.com>"}, []string{"bob@example.com"}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			r, err := ResolveRecipients(context.Background(), c.in, opts...)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(r.To, c.to) || !reflect.DeepEqual(r.Cc, c.cc) || r.Subject != "Re: Plan" {
+				t.Errorf("recipients = %+v", r)
+			}
+		})
+	}
+}

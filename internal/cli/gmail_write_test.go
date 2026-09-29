@@ -48,6 +48,19 @@ func newGmailWriteMux(t *testing.T) (*http.ServeMux, *gmailWriteServer) {
 			testutil.WriteJSON(t, w, map[string]any{"id": "m1", "threadId": "t1", "labelIds": []string{"TRASH"}})
 		case "POST /gmail/v1/users/me/threads/t1/trash", "POST /gmail/v1/users/me/threads/t1/untrash", "POST /gmail/v1/users/me/threads/t1/modify":
 			testutil.WriteJSON(t, w, map[string]any{"id": "t1"})
+		case "GET /gmail/v1/users/me/drafts/d1":
+			testutil.WriteJSON(t, w, map[string]any{"id": "d1", "message": map[string]any{"id": "m1", "payload": map[string]any{"headers": []any{
+				map[string]any{"name": "To", "value": "Zed <zed@example.com>"},
+				map[string]any{"name": "Subject", "value": "Quarterly plan"},
+			}}}})
+		case "GET /gmail/v1/users/me/profile":
+			testutil.WriteJSON(t, w, map[string]any{"emailAddress": "me@digio.es"})
+		case "GET /gmail/v1/users/me/messages/orig":
+			testutil.WriteJSON(t, w, map[string]any{"id": "orig", "threadId": "t1", "payload": map[string]any{"headers": []any{
+				map[string]any{"name": "From", "value": "Ana <ana@example.com>"},
+				map[string]any{"name": "To", "value": "me@digio.es, bob@example.com"},
+				map[string]any{"name": "Subject", "value": "Plan"},
+			}}})
 		case "GET /gmail/v1/users/me/labels":
 			testutil.WriteJSON(t, w, map[string]any{"labels": []any{map[string]any{"id": "Label_7", "name": "Customers", "type": "user"}}})
 		default:
@@ -228,6 +241,38 @@ func TestGmailDraftAndDraftSend(t *testing.T) {
 	}
 	if rec.body["POST /gmail/v1/users/me/drafts/send"]["id"] != "d1" {
 		t.Errorf("body %v", rec.body)
+	}
+}
+
+func TestGmailSendPromptShowsRecipients(t *testing.T) {
+	cases := []struct {
+		name string
+		args []string
+		want []string
+	}{
+		{"reply all", []string{"gmail", "send", "--reply-to", "orig", "--reply-all", "--body", "x"},
+			[]string{"To: Ana <ana@example.com>", "Cc: bob@example.com", `"Re: Plan"`}},
+		{"draft", []string{"gmail", "draft", "send", "d1"}, []string{"zed@example.com", "Quarterly plan"}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			mux, rec := newGmailWriteMux(t)
+			app, _, stderr := newTestApp(t, testutil.NewFakeProvider(t, mux))
+			app.In, app.IsTerminal = strings.NewReader("n\n"), func() bool { return true }
+			if code := app.Run(context.Background(), c.args); code == 0 {
+				t.Fatal("declined send succeeded")
+			}
+			for _, w := range c.want {
+				if !strings.Contains(stderr.String(), w) {
+					t.Errorf("prompt %q lacks %q", stderr.String(), w)
+				}
+			}
+			for _, k := range rec.calls {
+				if strings.HasPrefix(k, "POST") {
+					t.Errorf("unexpected write %s", k)
+				}
+			}
+		})
 	}
 }
 

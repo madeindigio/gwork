@@ -55,6 +55,66 @@ type composed struct {
 	raw      []byte
 	threadID string
 	nTo      int // number of recipients in To, Cc and Bcc
+	rcpt     Recipients
+}
+
+// Recipients are the final addresses and subject of a message to be sent.
+type Recipients struct {
+	To      []string `json:"to"`
+	Cc      []string `json:"cc"`
+	Bcc     []string `json:"bcc"`
+	Subject string   `json:"subject"`
+}
+
+// addrStrings renders addresses for display: "Name <addr>" or "addr".
+func addrStrings(l []*mail.Address) []string {
+	out := make([]string, len(l))
+	for i, a := range l {
+		if a.Name == "" {
+			out[i] = a.Address
+		} else {
+			out[i] = a.Name + " <" + a.Address + ">"
+		}
+	}
+	return out
+}
+
+// ResolveRecipients returns the recipients and subject that CreateDraft or
+// SendMessage would use for in, sharing their logic. On a reply it reads the
+// original message and the account profile; it never writes.
+func ResolveRecipients(ctx context.Context, in ComposeInput, opts ...option.ClientOption) (*Recipients, error) {
+	svc, err := New(ctx, opts...)
+	if err != nil {
+		return nil, err
+	}
+	c, err := compose(ctx, svc, in, time.Now())
+	if err != nil {
+		return nil, err
+	}
+	r := c.rcpt
+	return &r, nil
+}
+
+// DraftRecipients returns the recipients and subject of an existing draft.
+func DraftRecipients(ctx context.Context, draftID string, opts ...option.ClientOption) (*Recipients, error) {
+	if strings.TrimSpace(draftID) == "" {
+		return nil, errors.New("draft id is required")
+	}
+	svc, err := New(ctx, opts...)
+	if err != nil {
+		return nil, err
+	}
+	d, err := svc.Users.Drafts.Get(userID, draftID).Format("metadata").Context(ctx).Do()
+	if err != nil {
+		return nil, fmt.Errorf("get draft %s: %w", draftID, err)
+	}
+	r := &Recipients{To: []string{}, Cc: []string{}, Bcc: []string{}}
+	if d.Message != nil {
+		h := headerMap(d.Message.Payload)
+		r.To, r.Cc, r.Bcc = nonNil(addrStrings(parseList(h["to"]))), nonNil(addrStrings(parseList(h["cc"]))), nonNil(addrStrings(parseList(h["bcc"])))
+		r.Subject = decodeHeader(oneLine(h["subject"]))
+	}
+	return r, nil
 }
 
 // CreateDraft builds the message described by in and saves it as a draft.
@@ -152,13 +212,11 @@ func compose(ctx context.Context, svc *gmailapi.Service, in ComposeInput, now ti
 		if rc, err = fetchReplyContext(ctx, svc, in.ReplyToMessageID); err != nil {
 			return nil, err
 		}
-		if in.ReplyAll {
-			p, err := svc.Users.GetProfile(userID).Context(ctx).Do()
-			if err != nil {
-				return nil, fmt.Errorf("get profile: %w", err)
-			}
-			self = p.EmailAddress
+		p, err := svc.Users.GetProfile(userID).Context(ctx).Do()
+		if err != nil {
+			return nil, fmt.Errorf("get profile: %w", err)
 		}
+		self = p.EmailAddress
 	}
 	return buildMessage(in, rc, self, now)
 }
@@ -247,7 +305,7 @@ func hasRePrefix(s string) bool {
 }
 
 // buildMessage produces the RFC 5322 message. rc is the original message on a
-// reply; self is the account address, used to exclude it on reply-all.
+// reply; self is the account address, excluded from replies.
 func buildMessage(in ComposeInput, rc *replyContext, self string, now time.Time) (*composed, error) {
 	to, err := parseAddresses("to", in.To)
 	if err != nil {
@@ -343,5 +401,8 @@ func buildMessage(in ComposeInput, rc *replyContext, self string, now time.Time)
 	if err := qw.Close(); err != nil {
 		return nil, fmt.Errorf("encode body: %w", err)
 	}
-	return &composed{raw: buf.Bytes(), threadID: threadID, nTo: len(lists[0]) + len(lists[1]) + len(lists[2])}, nil
+	return &composed{
+		raw: buf.Bytes(), threadID: threadID, nTo: len(lists[0]) + len(lists[1]) + len(lists[2]),
+		rcpt: Recipients{To: addrStrings(lists[0]), Cc: addrStrings(lists[1]), Bcc: addrStrings(lists[2]), Subject: subject},
+	}, nil
 }

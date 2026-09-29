@@ -49,10 +49,10 @@ type ModifyResult struct {
 	// ThreadID and LabelIDs (the labels after the change) are only known for
 	// messages.
 	ThreadID string   `json:"thread_id,omitempty"`
-	LabelIDs []string `json:"label_ids,omitempty"`
+	LabelIDs []string `json:"label_ids"`
 	// Added and Removed are the label ids applied by ModifyLabels.
-	Added   []string `json:"added_label_ids,omitempty"`
-	Removed []string `json:"removed_label_ids,omitempty"`
+	Added   []string `json:"added_label_ids"`
+	Removed []string `json:"removed_label_ids"`
 }
 
 // systemLabelIDs are the label ids that need no lookup.
@@ -97,20 +97,9 @@ func resolveLabels(ctx context.Context, svc *gmailapi.Service, l *labelCache, re
 			if err != nil {
 				return nil, err
 			}
-			id = ""
-			for _, l := range labels {
-				if l.Id == ref {
-					id = l.Id
-					break
-				}
-			}
-			if id == "" {
-				for _, l := range labels {
-					if strings.EqualFold(l.Name, ref) {
-						id = l.Id
-						break
-					}
-				}
+			var err2 error
+			if id, err2 = matchLabel(labels, ref); err2 != nil {
+				return nil, err2
 			}
 			if id == "" {
 				return nil, fmt.Errorf("unknown label %q: use a label id or the exact name of an existing label", ref)
@@ -122,6 +111,35 @@ func resolveLabels(ctx context.Context, svc *gmailapi.Service, l *labelCache, re
 		}
 	}
 	return out, nil
+}
+
+// matchLabel finds ref among labels: an id wins, then an exact-case name,
+// then a unique case-insensitive name. Several case-insensitive matches are
+// ambiguous. It returns "" when nothing matches.
+func matchLabel(labels []*gmailapi.Label, ref string) (string, error) {
+	for _, l := range labels {
+		if l.Id == ref {
+			return l.Id, nil
+		}
+	}
+	for _, l := range labels {
+		if l.Name == ref {
+			return l.Id, nil
+		}
+	}
+	var ids []string
+	for _, l := range labels {
+		if strings.EqualFold(l.Name, ref) {
+			ids = append(ids, l.Id)
+		}
+	}
+	if len(ids) > 1 {
+		return "", fmt.Errorf("ambiguous label %q matches several labels (ids: %s): use the label id or the exact name", ref, strings.Join(ids, ", "))
+	}
+	if len(ids) == 1 {
+		return ids[0], nil
+	}
+	return "", nil
 }
 
 // ModifyLabels adds and removes labels (ids or names) on a message or on
@@ -153,7 +171,7 @@ func ModifyLabels(ctx context.Context, t Target, add, remove []string, opts ...o
 			}
 		}
 	}
-	res := &ModifyResult{Kind: t.Kind(), ID: t.ID(), Added: addIDs, Removed: removeIDs}
+	res := &ModifyResult{Kind: t.Kind(), ID: t.ID(), Added: nonNil(addIDs), Removed: nonNil(removeIDs), LabelIDs: []string{}}
 	if t.ThreadID != "" {
 		req := &gmailapi.ModifyThreadRequest{AddLabelIds: addIDs, RemoveLabelIds: removeIDs}
 		if _, err := svc.Users.Threads.Modify(userID, t.ThreadID, req).Context(ctx).Do(); err != nil {
@@ -166,7 +184,7 @@ func ModifyLabels(ctx context.Context, t Target, add, remove []string, opts ...o
 	if err != nil {
 		return nil, fmt.Errorf("modify labels of message %s: %w", t.MessageID, err)
 	}
-	res.ThreadID, res.LabelIDs = m.ThreadId, m.LabelIds
+	res.ThreadID, res.LabelIDs = m.ThreadId, nonNil(m.LabelIds)
 	return res, nil
 }
 
@@ -192,7 +210,7 @@ func trash(ctx context.Context, t Target, on bool, opts []option.ClientOption) (
 	if on {
 		verb = "trash"
 	}
-	res := &ModifyResult{Kind: t.Kind(), ID: t.ID()}
+	res := &ModifyResult{Kind: t.Kind(), ID: t.ID(), LabelIDs: []string{}, Added: []string{}, Removed: []string{}}
 	if t.ThreadID != "" {
 		if on {
 			_, err = svc.Users.Threads.Trash(userID, t.ThreadID).Context(ctx).Do()
@@ -213,6 +231,6 @@ func trash(ctx context.Context, t Target, on bool, opts []option.ClientOption) (
 	if err != nil {
 		return nil, fmt.Errorf("%s message %s: %w", verb, t.MessageID, err)
 	}
-	res.ThreadID, res.LabelIDs = m.ThreadId, m.LabelIds
+	res.ThreadID, res.LabelIDs = m.ThreadId, nonNil(m.LabelIds)
 	return res, nil
 }
