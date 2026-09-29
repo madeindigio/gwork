@@ -277,7 +277,7 @@ All write commands take `--yes/-y` and `--dry-run` (shared in
 Registered with `addWriteTool`: `readOnlyHint: false`, plus per-tool
 `destructiveHint`, `idempotentHint` and `openWorldHint` (tools that reach
 other people, like sending mail or posting in Chat, are open-world). Every call
-writes an audit line on stderr (Info: tool, account, service, duration,
+writes an audit line on stderr (Warn level, kept with `--log-level warn`: tool, account, service, duration,
 ok/error) that never includes message bodies or other content. When write
 tools are enabled the server instructions tell the model that they can change
 the user's data, to prefer drafts and to ask the user for explicit

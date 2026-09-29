@@ -117,7 +117,7 @@ func TestAddWriteToolAnnotationsAndAudit(t *testing.T) {
 		t.Fatalf("call failed: %s", resultText(res))
 	}
 	line := logs.String()
-	for _, want := range []string{"level=INFO", "tool=gmail_test_note", "account=tester@digio.es", "service=gmail", "duration=", "ok=true"} {
+	for _, want := range []string{"level=WARN", "tool=gmail_test_note", "account=tester@digio.es", "service=gmail", "duration=", "ok=true"} {
 		if !strings.Contains(line, want) {
 			t.Errorf("audit line lacks %q: %s", want, line)
 		}
