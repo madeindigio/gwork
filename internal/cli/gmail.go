@@ -21,6 +21,7 @@ func newGmailCmd(app *App) *cobra.Command {
 		newGmailLabelsCmd(app),
 		newGmailAttachmentCmd(app),
 	)
+	cmd.AddCommand(gmailWriteCommands(app)...)
 	return cmd
 }
 
