@@ -21,6 +21,7 @@ func newCalendarCmd(app *App) *cobra.Command {
 		newCalendarCalendarsCmd(app),
 		newCalendarEventsCmd(app),
 		newCalendarGetCmd(app),
+		newCalendarEventCmd(app),
 	)
 	return cmd
 }
