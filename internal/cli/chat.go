@@ -23,6 +23,7 @@ func newChatCmd(app *App) *cobra.Command {
 		newChatMessagesCmd(app),
 		newChatGetCmd(app),
 		newChatSearchCmd(app),
+		newChatSendCmd(app),
 	)
 	return cmd
 }
