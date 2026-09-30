@@ -517,6 +517,10 @@ func TestReplyRecipientsUseProfile(t *testing.T) {
 		testutil.WriteJSON(t, w, map[string]any{"id": "mine", "threadId": "t2", "payload": map[string]any{"headers": headers(
 			"Subject", "Plan", "From", "me@digio.es", "To", "bob@example.com")}})
 	})
+	mux.HandleFunc("GET /gmail/v1/users/me/messages/note", func(w http.ResponseWriter, r *http.Request) {
+		testutil.WriteJSON(t, w, map[string]any{"id": "note", "threadId": "t3", "payload": map[string]any{"headers": headers(
+			"Subject", "Plan", "From", "Me <me@digio.es>", "To", "<me@digio.es>")}})
+	})
 	opts := testutil.FakeGoogle(t, mux)
 	cases := []struct {
 		name string
@@ -527,6 +531,8 @@ func TestReplyRecipientsUseProfile(t *testing.T) {
 		{"reply to someone else", ComposeInput{ReplyToMessageID: "theirs"}, []string{"Ana <ana@example.com>"}, []string{}},
 		{"reply to own message", ComposeInput{ReplyToMessageID: "mine"}, []string{"bob@example.com"}, []string{}},
 		{"reply all to someone else", ComposeInput{ReplyToMessageID: "theirs", ReplyAll: true}, []string{"Ana <ana@example.com>"}, []string{"bob@example.com"}},
+		{"reply to a note to self goes to self", ComposeInput{ReplyToMessageID: "note"}, []string{"Me <me@digio.es>"}, []string{}},
+		{"reply all to a note to self", ComposeInput{ReplyToMessageID: "note", ReplyAll: true}, []string{"Me <me@digio.es>"}, []string{}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
