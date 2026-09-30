@@ -1,0 +1,245 @@
+package mcpserver
+
+import (
+	"encoding/base64"
+	"encoding/json"
+	"net/http"
+	"net/mail"
+	"slices"
+	"strings"
+	"sync"
+	"testing"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/madeindigio/gwork/internal/auth"
+	"github.com/madeindigio/gwork/internal/testutil"
+	"github.com/madeindigio/gwork/internal/workspace/gmail"
+)
+
+type gmailRecorder struct {
+	mu    sync.Mutex
+	calls []string
+	body  map[string]map[string]any
+}
+
+func gmailWriteMux(t *testing.T) (*http.ServeMux, *gmailRecorder) {
+	t.Helper()
+	rec := &gmailRecorder{body: map[string]map[string]any{}}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		key := r.Method + " " + r.URL.Path
+		var b map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&b)
+		rec.mu.Lock()
+		rec.calls = append(rec.calls, key)
+		rec.body[key] = b
+		rec.mu.Unlock()
+		switch key {
+		case "POST /gmail/v1/users/me/drafts":
+			testutil.WriteJSON(t, w, map[string]any{"id": "d1", "message": map[string]any{"id": "m1", "threadId": "t1", "labelIds": []string{"DRAFT"}}})
+		case "POST /gmail/v1/users/me/drafts/send":
+			testutil.WriteJSON(t, w, map[string]any{"id": "sent2", "threadId": "t2", "labelIds": []string{"SENT"}})
+		case "POST /gmail/v1/users/me/messages/send":
+			testutil.WriteJSON(t, w, map[string]any{"id": "sent1", "threadId": "t1", "labelIds": []string{"SENT"}})
+		case "POST /gmail/v1/users/me/messages/m1/modify":
+			testutil.WriteJSON(t, w, map[string]any{"id": "m1", "threadId": "t1", "labelIds": []string{"STARRED"}})
+		case "POST /gmail/v1/users/me/threads/t1/modify", "POST /gmail/v1/users/me/threads/t1/trash", "POST /gmail/v1/users/me/threads/t1/untrash":
+			testutil.WriteJSON(t, w, map[string]any{"id": "t1"})
+		case "POST /gmail/v1/users/me/messages/m1/trash":
+			testutil.WriteJSON(t, w, map[string]any{"id": "m1", "threadId": "t1", "labelIds": []string{"TRASH"}})
+		case "POST /gmail/v1/users/me/messages/m1/untrash":
+			testutil.WriteJSON(t, w, map[string]any{"id": "m1", "threadId": "t1", "labelIds": []string{"INBOX"}})
+		case "GET /gmail/v1/users/me/labels":
+			testutil.WriteJSON(t, w, map[string]any{"labels": []any{map[string]any{"id": "Label_7", "name": "Customers", "type": "user"}}})
+		default:
+			testutil.WriteGoogleError(w, 404, "notFound", "unexpected "+key)
+		}
+	})
+	return mux, rec
+}
+
+func gmailWriteSession(t *testing.T, allowSend bool) (cs *mcp.ClientSession, rec *gmailRecorder) {
+	t.Helper()
+	mux, rec := gmailWriteMux(t)
+	deps := testDeps(t, mux)
+	deps.Write = WriteOptions{Services: []auth.Service{auth.Gmail}, AllowSend: allowSend}
+	c, _ := newTestSession(t, deps, auth.Gmail)
+	return c, rec
+}
+
+func TestGmailWriteToolRegistration(t *testing.T) {
+	all := []string{"gmail_create_draft", "gmail_modify_labels", "gmail_trash", "gmail_untrash", "gmail_send_draft", "gmail_send_message"}
+	sendTools := []string{"gmail_send_draft", "gmail_send_message"}
+
+	cs, _ := gmailWriteSession(t, false)
+	tools := listTools(t, cs)
+	for _, n := range all {
+		if _, ok := tools[n]; ok != !slices.Contains(sendTools, n) {
+			t.Errorf("without allow-send: tool %s present = %v", n, ok)
+		}
+	}
+
+	cs, _ = gmailWriteSession(t, true)
+	tools = listTools(t, cs)
+	for _, n := range all {
+		if tools[n] == nil {
+			t.Fatalf("with allow-send: %s missing", n)
+		}
+		if tools[n].Annotations.ReadOnlyHint {
+			t.Errorf("%s is read-only", n)
+		}
+	}
+
+	// No --allow-write gmail: no write tool at all, even with allow-send.
+	mux, _ := gmailWriteMux(t)
+	deps := testDeps(t, mux)
+	deps.Write = WriteOptions{AllowSend: true}
+	cs2, _ := newTestSession(t, deps, auth.Gmail)
+	for n := range listTools(t, cs2) {
+		if slices.Contains(all, n) {
+			t.Errorf("tool %s registered without allow-write", n)
+		}
+	}
+}
+
+func TestGmailWriteToolAnnotations(t *testing.T) {
+	cs, _ := gmailWriteSession(t, true)
+	tools := listTools(t, cs)
+	cases := []struct {
+		name                             string
+		destructive, idempotent, openWld bool
+	}{
+		{"gmail_create_draft", false, false, false},
+		{"gmail_modify_labels", false, true, false},
+		{"gmail_trash", true, true, false},
+		{"gmail_untrash", false, true, false},
+		{"gmail_send_draft", true, false, true},
+		{"gmail_send_message", true, false, true},
+	}
+	for _, c := range cases {
+		a := tools[c.name].Annotations
+		if a.DestructiveHint == nil || *a.DestructiveHint != c.destructive || a.IdempotentHint != c.idempotent ||
+			a.OpenWorldHint == nil || *a.OpenWorldHint != c.openWld {
+			t.Errorf("%s annotations = %+v", c.name, a)
+		}
+	}
+	for _, n := range []string{"gmail_send_draft", "gmail_send_message", "gmail_trash"} {
+		if !strings.Contains(strings.ToLower(tools[n].Description), "confirmation") {
+			t.Errorf("%s description does not ask for confirmation", n)
+		}
+	}
+	if !strings.Contains(tools["gmail_send_message"].Description, "gmail_create_draft") {
+		t.Errorf("send_message should point to drafts")
+	}
+}
+
+func decodeMsg(t *testing.T, b map[string]any) *mail.Message {
+	t.Helper()
+	if m, ok := b["message"].(map[string]any); ok {
+		b = m
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(b["raw"].(string))
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := mail.ReadMessage(strings.NewReader(string(raw)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return m
+}
+
+func TestGmailCreateDraftTool(t *testing.T) {
+	cs, rec := gmailWriteSession(t, false)
+	out, res := callTool[gmail.DraftResult](t, cs, "gmail_create_draft", map[string]any{
+		"to": []string{"a@b.com"}, "subject": "Hola", "body": "text",
+	})
+	if res.IsError || out.DraftID != "d1" || out.ThreadID != "t1" {
+		t.Fatalf("res %s out %+v", resultText(res), out)
+	}
+	m := decodeMsg(t, rec.body["POST /gmail/v1/users/me/drafts"])
+	if m.Header.Get("Subject") != "Hola" || m.Header.Get("To") == "" {
+		t.Errorf("headers %v", m.Header)
+	}
+	// Header injection is rejected as a tool error, without an API call.
+	before := len(rec.calls)
+	_, res = callTool[gmail.DraftResult](t, cs, "gmail_create_draft", map[string]any{"to": []string{"a@b.com"}, "subject": "x\r\nBcc: e@e.com"})
+	if !res.IsError || len(rec.calls) != before {
+		t.Errorf("injection accepted: %v %v", res.IsError, rec.calls)
+	}
+}
+
+func TestGmailSendTools(t *testing.T) {
+	cs, rec := gmailWriteSession(t, true)
+	out, res := callTool[gmail.SendResult](t, cs, "gmail_send_message", map[string]any{"to": []string{"a@b.com"}, "subject": "Hi", "body": "x"})
+	if res.IsError || out.MessageID != "sent1" || out.ThreadID != "t1" {
+		t.Fatalf("send_message: %s %+v", resultText(res), out)
+	}
+	if rec.body["POST /gmail/v1/users/me/messages/send"]["raw"] == nil {
+		t.Errorf("no raw sent")
+	}
+	out, res = callTool[gmail.SendResult](t, cs, "gmail_send_draft", map[string]any{"draft_id": "d1"})
+	if res.IsError || out.MessageID != "sent2" || rec.body["POST /gmail/v1/users/me/drafts/send"]["id"] != "d1" {
+		t.Fatalf("send_draft: %s %+v", resultText(res), out)
+	}
+	_, res = callTool[gmail.SendResult](t, cs, "gmail_send_message", map[string]any{"subject": "no recipients"})
+	if !res.IsError || !strings.Contains(resultText(res), "no recipients") {
+		t.Errorf("missing recipients: %s", resultText(res))
+	}
+}
+
+func TestGmailModifyLabelsTool(t *testing.T) {
+	cs, rec := gmailWriteSession(t, false)
+	out, res := callTool[gmail.ModifyResult](t, cs, "gmail_modify_labels", map[string]any{
+		"message_id": "m1", "add_labels": []string{"customers", "STARRED"}, "remove_labels": []string{"INBOX"},
+	})
+	if res.IsError || out.Kind != "message" || out.ID != "m1" || len(out.LabelIDs) != 1 {
+		t.Fatalf("%s %+v", resultText(res), out)
+	}
+	b := rec.body["POST /gmail/v1/users/me/messages/m1/modify"]
+	if got := b["addLabelIds"].([]any); got[0] != "Label_7" || got[1] != "STARRED" {
+		t.Errorf("add = %v", got)
+	}
+	out, res = callTool[gmail.ModifyResult](t, cs, "gmail_modify_labels", map[string]any{"thread_id": "t1", "remove_labels": []string{"UNREAD"}})
+	if res.IsError || out.Kind != "thread" {
+		t.Fatalf("%s %+v", resultText(res), out)
+	}
+
+	for _, args := range []map[string]any{
+		{"add_labels": []string{"STARRED"}},
+		{"message_id": "m1", "thread_id": "t1", "add_labels": []string{"STARRED"}},
+	} {
+		_, res = callTool[gmail.ModifyResult](t, cs, "gmail_modify_labels", args)
+		if !res.IsError || !strings.Contains(resultText(res), "exactly one") {
+			t.Errorf("%v: %s", args, resultText(res))
+		}
+	}
+	_, res = callTool[gmail.ModifyResult](t, cs, "gmail_modify_labels", map[string]any{"message_id": "m1", "add_labels": []string{"Nope"}})
+	if !res.IsError || !strings.Contains(resultText(res), "unknown label") {
+		t.Errorf("unknown label: %s", resultText(res))
+	}
+}
+
+func TestGmailTrashTools(t *testing.T) {
+	cs, rec := gmailWriteSession(t, false)
+	out, res := callTool[gmail.ModifyResult](t, cs, "gmail_trash", map[string]any{"message_id": "m1"})
+	if res.IsError || out.LabelIDs[0] != "TRASH" {
+		t.Fatalf("%s %+v", resultText(res), out)
+	}
+	out, res = callTool[gmail.ModifyResult](t, cs, "gmail_untrash", map[string]any{"message_id": "m1"})
+	if res.IsError || out.LabelIDs[0] != "INBOX" {
+		t.Fatalf("%s %+v", resultText(res), out)
+	}
+	if _, res = callTool[gmail.ModifyResult](t, cs, "gmail_trash", map[string]any{"thread_id": "t1"}); res.IsError {
+		t.Fatal(resultText(res))
+	}
+	if _, res = callTool[gmail.ModifyResult](t, cs, "gmail_untrash", map[string]any{"thread_id": "t1"}); res.IsError {
+		t.Fatal(resultText(res))
+	}
+	before := len(rec.calls)
+	_, res = callTool[gmail.ModifyResult](t, cs, "gmail_trash", map[string]any{})
+	if !res.IsError || len(rec.calls) != before {
+		t.Errorf("empty target accepted")
+	}
+}

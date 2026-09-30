@@ -13,7 +13,7 @@ import (
 
 // newGmailCmd returns the "gwork gmail" command group.
 func newGmailCmd(app *App) *cobra.Command {
-	cmd := serviceGroup(auth.Gmail, "Read Gmail messages, threads, labels and attachments")
+	cmd := serviceGroup(auth.Gmail, "Read Gmail messages, threads, labels and attachments; drafts, send, labels and trash (needs auth login --write)")
 	cmd.AddCommand(
 		newGmailSearchCmd(app),
 		newGmailGetCmd(app),
@@ -21,6 +21,7 @@ func newGmailCmd(app *App) *cobra.Command {
 		newGmailLabelsCmd(app),
 		newGmailAttachmentCmd(app),
 	)
+	cmd.AddCommand(gmailWriteCommands(app)...)
 	return cmd
 }
 

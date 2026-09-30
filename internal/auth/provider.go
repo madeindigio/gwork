@@ -37,10 +37,17 @@ type ClientProvider interface {
 	// after checking that the account granted the scopes of svc. A missing
 	// scope yields an error wrapping ErrInsufficientScope.
 	ClientOptions(ctx context.Context, svc Service) ([]option.ClientOption, error)
+	// WriteClientOptions is like ClientOptions for write operations: it
+	// checks the read and the write scopes of svc. A missing scope yields the
+	// error of NewWriteScopeError.
+	WriteClientOptions(ctx context.Context, svc Service) ([]option.ClientOption, error)
 	// Account returns the email of the current account.
 	Account() string
 	// GrantedServices returns the services the account has granted.
 	GrantedServices() []Service
+	// WriteGrantedServices returns the services for which the account has
+	// granted both read and write scopes.
+	WriteGrantedServices() []Service
 }
 
 // ProviderOptions configures NewStoreProvider.
@@ -119,6 +126,12 @@ func (p *StoreProvider) GrantedServices() []Service {
 	return cur.Services()
 }
 
+// WriteGrantedServices implements ClientProvider.
+func (p *StoreProvider) WriteGrantedServices() []Service {
+	cur := p.ts.Current()
+	return cur.WriteServices()
+}
+
 // Scopes returns the granted scopes.
 func (p *StoreProvider) Scopes() []string { return slices.Clone(p.ts.Current().Scopes) }
 
@@ -133,11 +146,29 @@ func (p *StoreProvider) ClientOptions(_ context.Context, svc Service) ([]option.
 	if len(MissingScopes(p.ts.Current().Scopes, svc)) > 0 {
 		return nil, NewScopeError(p.account, svc)
 	}
+	return p.clientOptions(), nil
+}
+
+// WriteClientOptions implements ClientProvider.
+func (p *StoreProvider) WriteClientOptions(_ context.Context, svc Service) ([]option.ClientOption, error) {
+	if !svc.Valid() {
+		return nil, fmt.Errorf("unknown service %q", svc)
+	}
+	if !svc.Writable() {
+		return nil, fmt.Errorf("service %q does not support write operations", svc)
+	}
+	if len(MissingWriteScopes(p.ts.Current().Scopes, svc)) > 0 {
+		return nil, NewWriteScopeError(p.account, svc)
+	}
+	return p.clientOptions(), nil
+}
+
+func (p *StoreProvider) clientOptions() []option.ClientOption {
 	opts := []option.ClientOption{option.WithTokenSource(p.ts)}
 	if p.userAgent != "" {
 		opts = append(opts, option.WithUserAgent(p.userAgent))
 	}
-	return opts, nil
+	return opts
 }
 
 // ResolveAccount picks the account: --account flag, then GWORK_ACCOUNT, then

@@ -2,7 +2,16 @@
 
 This guide is for the maintainer who creates and owns the OAuth client that
 `gwork` uses to access Gmail, Google Drive, Google Chat and Google Calendar
-(read-only) in digio's Google Workspace (`digio.es`).
+in digio's Google Workspace (`digio.es`): read-only by default, plus opt-in
+write access for Gmail, Calendar and Chat (`gwork auth login --write`).
+
+**Upgrading an existing project for write operations:** add the three write
+scopes in [3.3 Data Access](#33-data-access-scopes), fill in the
+[Chat API Configuration page](#5-google-chat-api-configuration-page-required)
+(required for sending Chat messages), and, if the admin uses **Specific Google
+data** instead of **Trusted**, ask them to allow the new scopes
+(workspace-admin.md). No new API has to be enabled and no new OAuth client is
+needed; users run `gwork auth login --write gmail,calendar,chat` once.
 
 Result of this guide: a Google Cloud project under the digio organization with
 the four APIs enabled, an **Internal** OAuth app, and a **Desktop app** OAuth
@@ -125,7 +134,8 @@ Consequences:
 ### 3.3 Data Access (scopes)
 
 **Google Auth Platform > Data Access > Add or remove scopes**. Add exactly these
-read-only scopes (from `docs/architecture.md`), then **Update** and **Save**:
+scopes (from `docs/architecture.md`), then **Update** and **Save**. The first
+table is the read-only set every login uses:
 
 | Service | Scope | Classification |
 |---|---|---|
@@ -138,11 +148,21 @@ read-only scopes (from `docs/architecture.md`), then **Update** and **Save**:
 | chat | `https://www.googleapis.com/auth/chat.messages.readonly` | sensitive [R8] |
 | chat | `https://www.googleapis.com/auth/chat.memberships.readonly` | sensitive [R8] |
 
+Write scopes, requested only by `gwork auth login --write <services>` in
+addition to the read-only ones (Drive has none):
+
+| Service | Scope | Classification | Used for |
+|---|---|---|---|
+| gmail | `https://www.googleapis.com/auth/gmail.modify` | restricted [R6] | drafts, send, labels, archive, read state, trash |
+| calendar | `https://www.googleapis.com/auth/calendar.events` | sensitive [R14] | create, update, delete events, RSVP |
+| chat | `https://www.googleapis.com/auth/chat.messages.create` | sensitive [R8] | post messages as the user |
+
 If a scope is not listed in the picker, paste it into **Manually add scopes**.
 For an Internal app, restricted/sensitive scopes need no verification, but a
 Workspace admin may still restrict Gmail/Drive access org-wide; that is why the
-client ID should be marked **Trusted** (see workspace-admin.md). Do not add
-write scopes: `gwork` v1 is read-only by design.
+client ID should be marked **Trusted** (see workspace-admin.md). Do not add any
+other write scope (for example `gmail.send`, `calendar` or `drive`): gwork
+never requests them.
 
 ## 4. Create the OAuth client (Desktop app)
 
@@ -203,8 +223,9 @@ gwork treats it as internal material:
 
 ## 5. Google Chat API "Configuration" page: required?
 
-**Verified answer: No, not for gwork.** Google's "Configure the Google Chat
-API" page states [R12]:
+**Verified answer: No for read-only use, yes for Chat write operations
+(`gwork chat send`, MCP `chat_send_message`).** Google's "Configure the Google
+Chat API" page states [R12]:
 
 > "To perform read-only API calls with user authentication, like getting spaces
 > and listing messages, you only need to enable the API and create an OAuth
@@ -213,22 +234,23 @@ API" page states [R12]:
 > "To perform create, update, and delete API calls, you must also configure the
 > Chat API."
 
-`gwork` only uses user authentication with `chat.spaces.readonly`,
-`chat.messages.readonly` and `chat.memberships.readonly`, so the Chat app
-(App name, Avatar URL, Description on **Chat API > Configuration**) does not
-need to be configured.
+`gwork` reads with user authentication and `chat.spaces.readonly`,
+`chat.messages.readonly` and `chat.memberships.readonly`; for that alone the
+Chat app (App name, Avatar URL, Description on **Chat API > Configuration**)
+does not need to be configured. Posting messages (`chat.messages.create`) is a
+create call, so **configure it before enabling Chat writes** (steps below).
 
 Caveat: the generic "Authenticate and authorize as a Google Chat user" page
 still lists "Enable and configure the Google Chat API with a name, icon, and
 description for your Chat app" as a prerequisite for its samples [R13]. The
 more specific configuration page above is authoritative for read-only calls.
-If Chat calls fail with an error mentioning a missing Chat app configuration,
-fill in the page as a harmless fallback: open
+To configure it (required for Chat writes; a harmless fallback if read calls
+ever fail with an error mentioning a missing Chat app configuration), open
 <https://console.cloud.google.com/apis/api/chat.googleapis.com/hangouts-chat>,
 set **App name** `gwork` (up to 25 chars), **Avatar URL** (HTTPS, square
 PNG/JPEG, 256 px+), **Description** (up to 40 chars), turn **Enable
-interactive features** off, and **Save** [R12]. It is required anyway if
-`gwork` ever adds Chat write operations.
+interactive features** off, and **Save** [R12]. gwork posts as the user, not as this app: the configuration
+only has to exist, and no bot is installed in any space.
 
 Also required for Chat: the user needs a Business or Enterprise Workspace
 account with access to Google Chat [R13], and Chat apps must be allowed by the
@@ -244,6 +266,8 @@ admin (see workspace-admin.md).
 | `invalid_grant` on refresh | Refresh token no longer valid. Reasons per Google [R11]: user revoked access; unused for six months; password change (tokens with Gmail scopes); too many live refresh tokens for the account; time-based access expired; admin set a requested service to Restricted; Google Cloud session length exceeded (only for apps using Google Cloud scopes). Also a bad PKCE verifier during the initial exchange [R10]. | `gwork auth login` again (with the same `--services`). If it keeps happening, check admin restrictions. |
 | `403 SERVICE_DISABLED` / "... API has not been used in project N before or it is disabled" | The API is not enabled in the project that owns the OAuth client. | Enable it (section 2) in that project; wait a few minutes and retry. |
 | `403 insufficientPermissions` / `ACCESS_TOKEN_SCOPE_INSUFFICIENT` | Token lacks the service's scope (logged in without that service). | `gwork auth login --services <service>` (e.g. `chat`). Also check the scope is listed under Data Access. |
+| Write command fails with a missing write scope and `hint: run: gwork auth login --services <svc> --write <svc>` | The token was granted read-only access for that service. | Run the hinted command. If consent does not offer the write scope, check it is listed under Data Access and, with **Specific Google data**, allowed by the admin. |
+| `chat send` fails with an error about the Chat app not being configured (typically `404`/`403` mentioning the Chat app) | The **Chat API > Configuration** page was never filled in; create calls need it even with user authentication [R12]. | Fill in the page (section 5) and retry. |
 | Refresh token expires after 7 days | Only for projects with **External** user type and publishing status **Testing** [R11][R1]. | Should not happen with Internal. If it does, the project audience is wrong: set Audience to Internal. |
 | Internal option unavailable in Audience | Project has no organization parent. | Create the project under the `digio.es` organization (section 1) or migrate it. |
 

@@ -1,19 +1,29 @@
 # Google Workspace admin guide for gwork
 
 This guide is for the digio.es Google Workspace **super admin** (or an admin
-with the Security settings privilege). `gwork` is an internal, read-only CLI and
-MCP server that accesses users' Gmail, Drive, Calendar and Chat with their own
-OAuth consent. It uses an **Internal** OAuth app in a Google Cloud project
+with the Security settings privilege). `gwork` is an internal CLI and MCP
+server that accesses users' Gmail, Drive, Calendar and Chat with their own
+OAuth consent: read-only by default, with opt-in write access for Gmail,
+Calendar and Chat that each user must grant explicitly. It uses an **Internal** OAuth app in a Google Cloud project
 under the digio organization (see [setup-google-cloud.md](setup-google-cloud.md)).
 
 What the admin needs from the maintainer: the **OAuth client ID** of the
 `gwork` Desktop client (for example `1234567890-abc...apps.googleusercontent.com`),
 one per project (prod, and dev if used).
 
-Scopes requested (all read-only): `openid`, `userinfo.email`, `gmail.readonly`,
-`calendar.readonly`, `drive.readonly`, `chat.spaces.readonly`,
-`chat.messages.readonly`, `chat.memberships.readonly`. Google classifies
-`gmail.readonly` and `drive.readonly` as restricted, high-risk scopes.
+Scopes requested by every login (read-only): `openid`, `userinfo.email`,
+`gmail.readonly`, `calendar.readonly`, `drive.readonly`, `chat.spaces.readonly`,
+`chat.messages.readonly`, `chat.memberships.readonly`.
+
+Write scopes, requested only when a user runs `gwork auth login --write ...`:
+`gmail.modify` (drafts, send, labels, trash), `calendar.events` (create, update,
+delete events, RSVP) and `chat.messages.create` (post Chat messages as the
+user). Drive has no write access.
+
+Google classifies `gmail.readonly`, `gmail.modify` and `drive.readonly` as
+restricted, high-risk scopes. To keep gwork read-only for your organization,
+use **Specific Google data** (section 1) and allow only the read-only scopes:
+a `--write` login is then refused with `admin_policy_enforced`.
 
 Admin console paths below were checked against Google's documentation in
 September 2026 (see [References](#references)).
@@ -37,7 +47,7 @@ Path: **Menu > Security > Access and data control > API controls** [R1].
    services (both restricted and unrestricted)").
    - Alternative, least privilege: **Specific Google data** ("Can request data
      access only to scopes that you specify") and allow only the scopes listed
-     above.
+     above: the read-only ones, plus the write scopes you want to permit.
    - Optional: **Exempt from having API access blocked by Context-Aware Access
      levels** if CAA would otherwise block CLI use.
 8. Click **Continue**, then **Finish**.
@@ -89,9 +99,10 @@ Google's help: "Apps must be turned on for the top organizational unit to work
 with the Chat API, and to ensure apps work properly in spaces", and "If you
 don't allow this, then Chat APIs may be prevented from working properly." Note
 that turning the setting off "disables all app usage, including personal app
-use." `gwork` does not install a Chat app or bot; it only reads spaces and
-messages the user can already see, but this setting still gates Chat API
-access.
+use." `gwork` does not install a Chat app or bot; it reads spaces and
+messages the user can already see and, with write access, posts messages as
+the user in spaces and DMs they already belong to. This setting still gates
+Chat API access.
 
 If **Chat** is set to **Restricted** under **Manage Google Services**, the
 `gwork` client must be Trusted (section 1).

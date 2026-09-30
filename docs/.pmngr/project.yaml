@@ -41,8 +41,8 @@ id_allocation:
   write_counters: true
   counters:
     milestone: 3
-    epic: 9
-    story: 30
+    epic: 10
+    story: 34
     task: 44
 priorities:
   - critical

@@ -2,12 +2,13 @@
 id: GWORK-T-0044
 type: task
 title: Design opt-in write operations for Gmail, Calendar and Chat
-status: backlog
+status: done
 priority: medium
 author: mcp
 labels: [future, write, design]
 created: 2026-09-29T22:20:42Z
-updated: 2026-09-29T22:20:42Z
+updated: 2026-09-29T22:50:41Z
+closed: 2026-09-29T22:50:41Z
 ---
 
 ## Description

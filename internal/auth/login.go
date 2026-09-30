@@ -41,6 +41,9 @@ type LoginOptions struct {
 	Credentials *ClientCredentials
 	// Services selects the scopes to request (base scopes are always added).
 	Services []Service
+	// WriteServices additionally requests the write scopes of these services
+	// (and, implicitly, their read scopes).
+	WriteServices []Service
 	// HostedDomain, when set, is sent as the "hd" hint.
 	HostedDomain string
 	// LoginHint, when set, pre-selects the account in Google's chooser.
@@ -115,7 +118,7 @@ func Login(ctx context.Context, opts LoginOptions) (*StoredToken, error) {
 	port := ln.Addr().(*net.TCPAddr).Port
 	redirectURL := fmt.Sprintf("http://127.0.0.1:%d/callback", port)
 
-	requested := ScopesFor(opts.Services)
+	requested := ScopesForWrite(opts.Services, opts.WriteServices)
 	cfg := OAuthConfig(opts.Credentials, opts.Endpoint, redirectURL, requested)
 
 	state, err := randomState()
