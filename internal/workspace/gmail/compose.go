@@ -339,6 +339,9 @@ func buildMessage(in ComposeInput, rc *replyContext, self string, now time.Time)
 					}
 				}
 			}
+			if len(to) == 0 && len(rc.replyTo) > 0 { // a note to self: reply to self, as Gmail does
+				to = append(to, rc.replyTo[0])
+			}
 		}
 		if in.ReplyAll {
 			orig := append(append([]*mail.Address{}, rc.to...), rc.cc...)

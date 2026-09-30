@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"golang.org/x/oauth2"
+	"golang.org/x/term"
 	"google.golang.org/api/option"
 
 	"github.com/madeindigio/gwork/internal/auth"
@@ -70,11 +71,10 @@ func NewApp(out, errw io.Writer) *App {
 	return &App{Out: out, Err: errw, Now: time.Now}
 }
 
-// stdinIsTerminal reports whether os.Stdin is an interactive terminal (a
-// character device) rather than a pipe or a file.
+// stdinIsTerminal reports whether os.Stdin is an interactive terminal rather
+// than a pipe, a file or a non-terminal character device such as /dev/null.
 func stdinIsTerminal() bool {
-	fi, err := os.Stdin.Stat()
-	return err == nil && fi.Mode()&os.ModeCharDevice != 0
+	return term.IsTerminal(int(os.Stdin.Fd())) //nolint:gosec // file descriptors fit in int
 }
 
 // CurrentTime returns the App clock's current time.
