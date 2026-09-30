@@ -13,7 +13,8 @@ Two parts:
    (`make smoke`): every read command with `--json`, JSON validity with `jq`,
    and the MCP server over stdio.
 
-Everything is read-only. The script keeps command output in a private
+The automated part is read-only; the optional [write checks](#3-write-checks-optional)
+change real data and are done by hand. The script keeps command output in a private
 temporary directory (mode 0700, deleted at exit) and prints only ids, counts
 and PASS/FAIL, never message content or tokens. Do not paste tokens,
 `auth status` storage paths of other people or message contents into the
@@ -58,6 +59,10 @@ $GWORK_BIN version --json     # check version and commit
 | I13 | `$GWORK_BIN auth logout` | Token revoked at Google and deleted locally; `https://myaccount.google.com/connections` no longer lists gwork (may take a minute); `auth status` says not logged in |
 
 ## 2. Automated checks
+
+`scripts/smoke.sh` starts `gwork mcp` without `--allow-write`, so its
+"all tools `readOnlyHint`" check also verifies that write tools stay hidden by
+default.
 
 Log in first (step I4), then:
 
@@ -108,6 +113,28 @@ PASS  mcp-whoami                         gmail,calendar,drive,chat
 all smoke checks passed (21 gwork runs)
 ```
 
+## 3. Write checks (optional)
+
+Run them after changing write code or before a release that touches it. They
+change real data: use your own mailbox (send only to yourself), a test calendar
+event with no other guests, and a Chat space created for testing. Prerequisites:
+the write scopes are listed under Data Access and the Chat API Configuration
+page is filled in ([setup-google-cloud.md](setup-google-cloud.md) sections 3.3
+and 5).
+
+| # | Step | Expected |
+|---|---|---|
+| W1 | `$GWORK_BIN gmail draft create --to <you> --subject smoke --body hi` before any write login | Fails with `hint: run: gwork auth login --services gmail --write gmail` |
+| W2 | `$GWORK_BIN auth login --write gmail,calendar,chat` | Consent screen asks for the additional Gmail, Calendar and Chat permissions; `auth status` shows a Write row with `calendar, chat, gmail` |
+| W3 | `$GWORK_BIN gmail draft create --to <you> --subject "gwork smoke ñ" --body hi` | Draft visible in Gmail Drafts with the accented subject intact |
+| W4 | `$GWORK_BIN gmail draft send <draftId>` (answer `y`) | Prompt lists To and subject; mail arrives in your inbox |
+| W5 | `$GWORK_BIN gmail draft create --reply-to <thatMessageId> --body reply` | Draft appears inside the same conversation, subject `Re: ...`, addressed to you |
+| W6 | `$GWORK_BIN gmail archive <id>`, then `mark-unread`, `star`, `trash`, `untrash` | Each change visible in Gmail; `trash` asks for confirmation |
+| W7 | `$GWORK_BIN calendar event create --summary smoke --start tomorrow --duration 15m` | Event in your calendar at 00:00 tomorrow, 15 min, no prompt (no guests) |
+| W8 | `$GWORK_BIN calendar event update <id> --start "<tomorrow>T10:00:00+02:00"` then `delete <id>` | Moved keeping 15 min; delete asks for confirmation and removes it |
+| W9 | `$GWORK_BIN chat send --space <testSpace> --text "gwork smoke" --dry-run`, then without `--dry-run` | Dry run prints the request only; the real run asks for confirmation and the message appears in the space |
+| W10 | Claude Code: `claude mcp add gwork-smoke -- $GWORK_BIN mcp --allow-write gmail`, ask it to draft a mail to yourself, then ask it to send it | `gmail_create_draft` works; no send tool exists (no `--allow-send`), so the agent cannot send; `whoami` shows `write_services: [gmail]`, `allow_send: false`. Remove the server afterwards |
+
 ## Results
 
 Copy this table into the release PR or issue and fill it in. Use `PASS`,
@@ -133,6 +160,7 @@ Copy this table into the release PR or issue and fill it in. Use `PASS`,
 | I11 Chat sender names | | | | |
 | I12 MCP in Claude Code | | | | |
 | I13 logout and revocation | | | | |
+| W1-W10 write checks (optional) | | | | |
 | `scripts/smoke.sh` basics | | | | |
 | `scripts/smoke.sh` Gmail | | | | |
 | `scripts/smoke.sh` Calendar | | | | |
