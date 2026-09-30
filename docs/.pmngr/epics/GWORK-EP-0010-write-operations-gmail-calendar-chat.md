@@ -2,13 +2,14 @@
 id: GWORK-EP-0010
 type: epic
 title: "Write operations: Gmail, Calendar, Chat"
-status: in_progress
+status: done
 priority: high
 author: mcp
 labels: [write]
 created: 2026-09-29T22:32:12Z
-updated: 2026-09-29T22:32:12Z
+updated: 2026-09-30T15:08:27Z
 started: 2026-09-29T22:32:12Z
+closed: 2026-09-30T15:08:27Z
 ---
 
 ## Description
