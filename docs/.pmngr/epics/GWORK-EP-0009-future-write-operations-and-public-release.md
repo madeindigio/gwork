@@ -2,12 +2,13 @@
 id: GWORK-EP-0009
 type: epic
 title: "Future: write operations and public release"
-status: backlog
+status: done
 priority: low
 author: mcp
 labels: [future]
 created: 2026-09-24T21:16:00Z
-updated: 2026-09-24T21:16:00Z
+updated: 2026-09-30T16:30:18Z
+closed: 2026-09-30T16:30:18Z
 ---
 
 ## Description
