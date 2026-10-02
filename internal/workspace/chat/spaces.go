@@ -22,6 +22,10 @@ type ListSpacesOptions struct {
 	// Type limits the result to one space type: "space", "group", "dm" (or
 	// the API enum value). Empty lists every type.
 	Type string
+	// Section limits the result to the spaces of one sidebar section (see
+	// FindSection for the accepted forms), in the section's order. Empty
+	// lists every space.
+	Section string
 	// Max caps the number of spaces returned; <= 0 means DefaultMaxSpaces.
 	Max int
 }
@@ -33,7 +37,53 @@ func ListSpaces(ctx context.Context, svc *chatapi.Service, o ListSpacesOptions) 
 	if limit <= 0 {
 		limit = DefaultMaxSpaces
 	}
-	return listSpaces(ctx, svc, o.Type, limit)
+	if strings.TrimSpace(o.Section) == "" {
+		return listSpaces(ctx, svc, o.Type, limit)
+	}
+	spaces, err := listSectionSpaces(ctx, svc, o.Section, o.Type)
+	if err != nil {
+		return nil, err
+	}
+	return spaces[:min(limit, len(spaces))], nil
+}
+
+// listSectionSpaces returns the spaces of a section, in the section's order
+// and optionally limited to one space type. Section items only carry the
+// space name, so details come from spaces.list; an item missing there (a
+// conversation without messages) is kept with its name only, unless a type
+// was requested.
+func listSectionSpaces(ctx context.Context, svc *chatapi.Service, section, typ string) ([]Space, error) {
+	if _, err := SpaceTypeFilter(typ); err != nil {
+		return nil, err
+	}
+	sec, err := FindSection(ctx, svc, section)
+	if err != nil {
+		return nil, err
+	}
+	names, err := listSectionSpaceNames(ctx, svc, sec.Name)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Space, 0, len(names))
+	if len(names) == 0 {
+		return out, nil
+	}
+	all, err := listSpaces(ctx, svc, typ, 0)
+	if err != nil {
+		return nil, err
+	}
+	byName := make(map[string]Space, len(all))
+	for _, sp := range all {
+		byName[sp.Name] = sp
+	}
+	for _, name := range names {
+		if sp, ok := byName[name]; ok {
+			out = append(out, sp)
+		} else if typ == "" {
+			out = append(out, Space{Name: name})
+		}
+	}
+	return out, nil
 }
 
 // listSpaces pages through spaces.list; limit <= 0 means no limit.

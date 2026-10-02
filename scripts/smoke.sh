@@ -252,7 +252,7 @@ declare -A EXPECTED=(
   [gmail]="gmail_search gmail_get_message gmail_get_thread gmail_list_labels"
   [calendar]="calendar_list_calendars calendar_list_events calendar_get_event"
   [drive]="drive_search drive_get_file drive_read_file"
-  [chat]="chat_list_spaces chat_find_dm chat_list_messages chat_get_message chat_search_messages"
+  [chat]="chat_list_spaces chat_find_dm chat_list_messages chat_get_message chat_search_messages chat_list_sections chat_list_unread_messages"
 )
 TOOLS=" $(jqv mcp-tools-list '[.result.tools[].name] | join(" ")') "
 [[ "$TOOLS" == *" whoami "* ]] || fail mcp-tools-list "whoami missing"

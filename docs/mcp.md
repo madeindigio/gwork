@@ -200,7 +200,9 @@ for those.
 
 | Tool | Inputs | Output |
 |---|---|---|
-| `chat_list_spaces` | `type` (`space`, `group`, `dm`), `max_results` (default 100, max 1000) | `spaces[]`: `name` (`spaces/...`), `display_name`, `type`, `last_active_time`, `member_count` |
+| `chat_list_spaces` | `type` (`space`, `group`, `dm`), `section` (custom section display name such as `Favorites`, section id or resource name), `max_results` (default 100, max 1000) | `spaces[]`: `name` (`spaces/...`), `display_name`, `type`, `last_active_time`, `member_count` |
+| `chat_list_sections` | none | `sections[]` of the user's Chat sidebar: `name` (`users/{id}/sections/...`), `display_name` (custom sections only), `type` (`CUSTOM_SECTION`, `DEFAULT_DIRECT_MESSAGES`, `DEFAULT_SPACES`, `DEFAULT_APPS`), `sort_order` |
+| `chat_list_unread_messages` | `spaces[]` (default all), `type`, `section` (both ignored when `spaces` is set), `max_per_space` (default 20, max 200), `max_chars` (per message) | `spaces[]` most recently active first, each with `space`, `last_read_time`, `messages[]` newest first and `more`; `spaces_checked`, `spaces_total`, `failed_spaces[]`, `truncated` |
 | `chat_find_dm` | `email` (required) | `space`: the direct message space with that person (error if no DM exists yet) |
 | `chat_list_messages` | `space` (required, `spaces/XXX` or `XXX`), `since`, `until`, `thread`, `order` (`asc` or `desc`, default `desc`), `max_results` (default 50, max 1000), `max_chars` (per message) | `messages[]`: `name`, `space`, `thread`, `sender` (`name` = `users/{id}`, `display_name` when known), `text`, `create_time`, attachments; `truncated` |
 | `chat_get_message` | `message_name` (required, `spaces/S/messages/M`), `max_chars` | `message`; `truncated` |

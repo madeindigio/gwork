@@ -22,6 +22,7 @@ const (
 
 type chatListSpacesInput struct {
 	Type       string `json:"type,omitempty" jsonschema:"only this space type: space, group or dm (default: all)"`
+	Section    string `json:"section,omitempty" jsonschema:"only spaces of this sidebar section: display name of a custom section (e.g. Favorites), section id or resource name; see chat_list_sections"`
 	MaxResults int    `json:"max_results,omitempty" jsonschema:"maximum number of spaces (default 100, max 1000)"`
 }
 
@@ -83,13 +84,14 @@ func registerChat(s *mcp.Server, deps Deps) {
 		Name: "chat_list_spaces",
 		Description: "List the Google Chat spaces, group chats and direct messages the user is a member of " +
 			"(name, display_name, type, last_active_time, member_count). DMs and group chats usually have no " +
-			"display name; use chat_find_dm to locate the DM with a person.",
+			"display name; use chat_find_dm to locate the DM with a person. Set section to list only the spaces " +
+			"the user grouped in one sidebar section (e.g. their favorites).",
 	}, func(ctx context.Context, in chatListSpacesInput) (chatListSpacesOutput, error) {
 		svc, err := chatService(ctx, deps)
 		if err != nil {
 			return chatListSpacesOutput{}, err
 		}
-		spaces, err := chat.ListSpaces(ctx, svc, chat.ListSpacesOptions{Type: in.Type, Max: min(in.MaxResults, chatMaxResults)})
+		spaces, err := chat.ListSpaces(ctx, svc, chat.ListSpacesOptions{Type: in.Type, Section: in.Section, Max: min(in.MaxResults, chatMaxResults)})
 		if err != nil {
 			return chatListSpacesOutput{}, err
 		}
@@ -186,6 +188,8 @@ func registerChat(s *mcp.Server, deps Deps) {
 		truncated := truncateChatTexts(res.Matches, in.MaxChars)
 		return chatSearchMessagesOutput{SearchResult: res, Truncated: truncated}, nil
 	})
+
+	registerChatUnread(s, deps)
 }
 
 // chatService builds a Chat API client for the current account.

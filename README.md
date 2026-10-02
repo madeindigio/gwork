@@ -62,8 +62,9 @@ Times such as `--from`, `--since` or `--modified-after` accept RFC 3339, dates
 
 - **Read-only scopes by default.** `gwork` requests `gmail.readonly`,
   `calendar.readonly`, `drive.readonly`, `chat.spaces.readonly`,
-  `chat.messages.readonly` and `chat.memberships.readonly` (plus `openid` and
-  `userinfo.email` to know the account). Services are consented incrementally:
+  `chat.messages.readonly`, `chat.memberships.readonly`,
+  `chat.users.readstate.readonly` and `chat.users.sections.readonly` (plus
+  `openid` and `userinfo.email` to know the account). Services are consented incrementally:
   log in with only the ones you need.
 - **Writes are opt-in, twice.** `gwork auth login --write gmail,calendar,chat`
   adds `gmail.modify`, `calendar.events` and `chat.messages.create` (Drive has
@@ -200,6 +201,10 @@ gwork chat dm bob@digio.es
 gwork chat messages spaces/AAAA1234 --since 2d
 gwork chat get spaces/AAAA1234/messages/BBBB5678
 gwork chat search "release date" --since 14d
+gwork chat unread                               # messages after your read position, per space
+gwork chat sections                             # sidebar sections, e.g. a custom "Favorites"
+gwork chat spaces --section Favorites
+gwork chat unread --section Favorites
 ```
 
 Every command has `--help` with all flags and examples.

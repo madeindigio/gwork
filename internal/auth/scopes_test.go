@@ -29,9 +29,23 @@ func TestParseServices(t *testing.T) {
 
 func TestScopesFor(t *testing.T) {
 	got := ScopesFor([]Service{Chat, Gmail})
-	want := []string{ScopeOpenID, ScopeUserinfoEmail, ScopeChatSpacesReadonly, ScopeChatMessagesRO, ScopeChatMembershipsRO, ScopeGmailReadonly}
+	want := []string{ScopeOpenID, ScopeUserinfoEmail, ScopeChatSpacesReadonly, ScopeChatMessagesRO, ScopeChatMembershipsRO,
+		ScopeChatReadStateRO, ScopeChatSectionsRO, ScopeGmailReadonly}
 	if !slices.Equal(got, want) {
 		t.Fatalf("got %v", got)
+	}
+}
+
+func TestOptionalScopesAreNotRequired(t *testing.T) {
+	granted := []string{ScopeChatSpacesReadonly, ScopeChatMessagesRO, ScopeChatMembershipsRO}
+	if m := MissingScopes(granted, Chat); len(m) != 0 {
+		t.Fatalf("chat missing %v", m)
+	}
+	if got := Chat.OptionalScopes(); !slices.Equal(got, []string{ScopeChatReadStateRO, ScopeChatSectionsRO}) {
+		t.Fatalf("optional %v", got)
+	}
+	if Gmail.OptionalScopes() != nil {
+		t.Fatal("gmail has no optional scopes")
 	}
 }
 

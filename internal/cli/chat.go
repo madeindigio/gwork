@@ -19,6 +19,8 @@ func newChatCmd(app *App) *cobra.Command {
 	cmd := serviceGroup(auth.Chat, "Read Google Chat spaces and messages; send messages (needs auth login --write)")
 	cmd.AddCommand(
 		newChatSpacesCmd(app),
+		newChatSectionsCmd(app),
+		newChatUnreadCmd(app),
 		newChatDMCmd(app),
 		newChatMessagesCmd(app),
 		newChatGetCmd(app),
@@ -29,13 +31,15 @@ func newChatCmd(app *App) *cobra.Command {
 }
 
 func newChatSpacesCmd(app *App) *cobra.Command {
-	var typ string
+	var typ, section string
 	var limit int
 	cmd := &cobra.Command{
 		Use:   "spaces",
 		Short: "List the Chat spaces, group chats and DMs you are a member of",
 		Long: "List the Chat spaces you are a member of. Group chats and direct messages\n" +
-			"only appear once they have at least one message.",
+			"only appear once they have at least one message.\n\n" +
+			"--section keeps the spaces of one section of the Chat sidebar (for example\n" +
+			"a custom \"Favorites\" section), in the section's order; see \"gwork chat sections\".",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
@@ -47,7 +51,7 @@ func newChatSpacesCmd(app *App) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			spaces, err := chat.ListSpaces(ctx, svc, chat.ListSpacesOptions{Type: typ, Max: limit})
+			spaces, err := chat.ListSpaces(ctx, svc, chat.ListSpacesOptions{Type: typ, Section: section, Max: limit})
 			if err != nil {
 				return err
 			}
@@ -65,6 +69,7 @@ func newChatSpacesCmd(app *App) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&typ, "type", "", "only list this type: space, group or dm")
+	cmd.Flags().StringVar(&section, "section", "", "only spaces of this sidebar section (display name, id or resource name)")
 	cmd.Flags().IntVar(&limit, "max", chat.DefaultMaxSpaces, "maximum number of spaces")
 	return cmd
 }

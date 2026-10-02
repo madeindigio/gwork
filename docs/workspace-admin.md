@@ -13,7 +13,8 @@ one per project (prod, and dev if used).
 
 Scopes requested by every login (read-only): `openid`, `userinfo.email`,
 `gmail.readonly`, `calendar.readonly`, `drive.readonly`, `chat.spaces.readonly`,
-`chat.messages.readonly`, `chat.memberships.readonly`.
+`chat.messages.readonly`, `chat.memberships.readonly`,
+`chat.users.readstate.readonly`, `chat.users.sections.readonly`.
 
 Write scopes, requested only when a user runs `gwork auth login --write ...`:
 `gmail.modify` (drafts, send, labels, trash), `calendar.events` (create, update,

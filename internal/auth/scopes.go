@@ -31,6 +31,11 @@ const (
 	ScopeChatMessagesRO     = "https://www.googleapis.com/auth/chat.messages.readonly"
 	ScopeChatMembershipsRO  = "https://www.googleapis.com/auth/chat.memberships.readonly"
 
+	// Optional read scopes: requested at login, not required to use the
+	// service (see optionalScopes).
+	ScopeChatReadStateRO = "https://www.googleapis.com/auth/chat.users.readstate.readonly"
+	ScopeChatSectionsRO  = "https://www.googleapis.com/auth/chat.users.sections.readonly"
+
 	// Write scopes, requested only with "gwork auth login --write".
 	ScopeGmailModify        = "https://www.googleapis.com/auth/gmail.modify"
 	ScopeCalendarEvents     = "https://www.googleapis.com/auth/calendar.events"
@@ -45,6 +50,14 @@ var serviceScopes = map[Service][]string{
 	Calendar: {ScopeCalendarReadonly},
 	Drive:    {ScopeDriveReadonly},
 	Chat:     {ScopeChatSpacesReadonly, ScopeChatMessagesRO, ScopeChatMembershipsRO},
+}
+
+// optionalScopes holds read-only scopes that only some features of a service
+// need (Chat unread messages and sections). Login requests them, but a token
+// without them still grants the service, so logins made before a scope was
+// added keep working; the features that need it fail with a login hint.
+var optionalScopes = map[Service][]string{
+	Chat: {ScopeChatReadStateRO, ScopeChatSectionsRO},
 }
 
 // WritableServices lists the services that support write operations.
@@ -78,6 +91,12 @@ func (s Service) Valid() bool {
 // Scopes returns the read-only OAuth scopes required by the service.
 func (s Service) Scopes() []string {
 	return slices.Clone(serviceScopes[s])
+}
+
+// OptionalScopes returns the read-only OAuth scopes that login requests for
+// the service but that are not required to use it.
+func (s Service) OptionalScopes() []string {
+	return slices.Clone(optionalScopes[s])
 }
 
 // ParseServices parses a comma separated list such as "gmail,chat".
@@ -123,12 +142,12 @@ func JoinServices(svcs []Service) string {
 	return strings.Join(parts, ",")
 }
 
-// ScopesFor returns the base scopes plus the scopes of every service,
-// without duplicates.
+// ScopesFor returns the base scopes plus the required and optional scopes of
+// every service, without duplicates.
 func ScopesFor(svcs []Service) []string {
 	out := slices.Clone(BaseScopes)
 	for _, s := range svcs {
-		for _, sc := range serviceScopes[s] {
+		for _, sc := range slices.Concat(serviceScopes[s], optionalScopes[s]) {
 			if !slices.Contains(out, sc) {
 				out = append(out, sc)
 			}

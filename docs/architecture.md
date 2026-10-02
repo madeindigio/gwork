@@ -86,10 +86,16 @@ Scopes (read-only; write scopes are listed under Write operations):
 | gmail | `gmail.readonly` |
 | calendar | `calendar.readonly` |
 | drive | `drive.readonly` |
-| chat | `chat.spaces.readonly`, `chat.messages.readonly`, `chat.memberships.readonly` |
+| chat | `chat.spaces.readonly`, `chat.messages.readonly`, `chat.memberships.readonly`; optional: `chat.users.readstate.readonly`, `chat.users.sections.readonly` |
 
 Commands check that the stored token covers the service's scopes; if not they
 fail with an actionable message: `run: gwork auth login --services chat`.
+
+Optional scopes are requested by every login of the service but are not part
+of that check, so tokens stored before a scope was added keep working. Only
+the features that need them (`chat unread`, `chat sections`,
+`chat spaces --section`) fail, with Google's 403 classified as a missing scope
+and the same login hint.
 
 ### Token store
 
@@ -145,7 +151,9 @@ gwork drive search [text] [--name] [--type doc|sheet|slides|pdf|image|folder|for
 gwork drive get <fileId>                        # metadata
 gwork drive read <fileId> [--format md|txt|csv] [--max-bytes 5242880]
 gwork drive download <fileId> --out <path> [--export-format docx|xlsx|pptx|pdf|...] [--force]
-gwork chat spaces [--type space|group|dm] [--max 100]
+gwork chat spaces [--type space|group|dm] [--section <name>] [--max 100]
+gwork chat sections                             # sidebar sections (default and custom, e.g. "Favorites")
+gwork chat unread [--space ...] [--type] [--section] [--max-per-space 20] [--no-resolve-names]
 gwork chat dm <email>                           # find direct message space
 gwork chat messages <space> [--since] [--until] [--thread] [--order desc|asc] [--max 50] [--no-resolve-names]
 gwork chat get <messageName> [--no-resolve-names]
@@ -179,6 +187,14 @@ Content rules:
 - Chat has no user-level full-text search API: `chat search` lists messages in
   the selected spaces within a time window and filters client-side, capped by
   `--max-scan`.
+- Chat has no unread flag or counter: `chat unread` reads the user's read
+  state of each selected space (`users/me/spaces/{space}/spaceReadState`) and
+  lists the messages created after `lastReadTime`, skipping spaces whose last
+  activity is older. Thread read states are not considered.
+- Chat has no "starred" or "favorite" attribute on spaces: the user's grouping
+  of conversations is exposed as sidebar sections (`users/me/sections`, system
+  and custom). `--section` accepts a custom section's display name, a section
+  id or a resource name.
 - Chat sender display names: verified against the digio tenant (2026-09-29),
   the Chat API returns `sender.displayName` for human senders with user
   authentication. When a message lacks it, gwork fills it from space
@@ -204,7 +220,9 @@ annotated `readOnlyHint: true`; write tools exist only with `--allow-write`
 | `drive_search` | `query_text`, `name`, `type`, `mime_type`, `owner`, `folder_id`, `modified_after`, `raw_query`, `max_results` |
 | `drive_get_file` | `file_id` |
 | `drive_read_file` | `file_id`, `max_chars` |
-| `chat_list_spaces` | `type`, `max_results` (max 1000) |
+| `chat_list_spaces` | `type`, `section`, `max_results` (max 1000) |
+| `chat_list_sections` | none |
+| `chat_list_unread_messages` | `spaces`, `type`, `section`, `max_per_space` (max 200), `max_chars` |
 | `chat_find_dm` | `email` |
 | `chat_list_messages` | `space`, `since`, `until`, `thread`, `order`, `max_results` (max 1000), `max_chars` |
 | `chat_get_message` | `message_name`, `max_chars` |

@@ -147,6 +147,8 @@ table is the read-only set every login uses:
 | chat | `https://www.googleapis.com/auth/chat.spaces.readonly` | sensitive [R8] |
 | chat | `https://www.googleapis.com/auth/chat.messages.readonly` | sensitive [R8] |
 | chat | `https://www.googleapis.com/auth/chat.memberships.readonly` | sensitive [R8] |
+| chat | `https://www.googleapis.com/auth/chat.users.readstate.readonly` | optional: `chat unread` |
+| chat | `https://www.googleapis.com/auth/chat.users.sections.readonly` | optional: `chat sections`, `--section` |
 
 Write scopes, requested only by `gwork auth login --write <services>` in
 addition to the read-only ones (Drive has none):
