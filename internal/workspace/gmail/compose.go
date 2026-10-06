@@ -3,16 +3,17 @@ package gmail
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"mime"
+	"mime/multipart"
 	"mime/quotedprintable"
 	"net/mail"
 	"strings"
 	"time"
 
 	gmailapi "google.golang.org/api/gmail/v1"
+	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
 )
 
@@ -33,6 +34,9 @@ type ComposeInput struct {
 	// ReplyAll also addresses the original To and Cc recipients (except the
 	// account itself). Only valid with ReplyToMessageID.
 	ReplyAll bool `json:"reply_all,omitempty"`
+	// Attachments are files to attach. With attachments the message is
+	// multipart/mixed; their total size is limited to MaxAttachmentBytes.
+	Attachments []OutgoingAttachment `json:"attachments,omitempty"`
 }
 
 // DraftResult identifies a created draft.
@@ -127,7 +131,8 @@ func CreateDraft(ctx context.Context, in ComposeInput, opts ...option.ClientOpti
 	if err != nil {
 		return nil, err
 	}
-	d, err := svc.Users.Drafts.Create(userID, &gmailapi.Draft{Message: c.message()}).Context(ctx).Do()
+	d, err := svc.Users.Drafts.Create(userID, &gmailapi.Draft{Message: &gmailapi.Message{ThreadId: c.threadID}}).
+		Media(bytes.NewReader(c.raw), mediaOptions...).Context(ctx).Do()
 	if err != nil {
 		return nil, fmt.Errorf("create draft: %w", err)
 	}
@@ -169,7 +174,8 @@ func SendMessage(ctx context.Context, in ComposeInput, opts ...option.ClientOpti
 	if c.nTo == 0 {
 		return nil, errors.New("no recipients: set to, cc or bcc")
 	}
-	m, err := svc.Users.Messages.Send(userID, c.message()).Context(ctx).Do()
+	m, err := svc.Users.Messages.Send(userID, &gmailapi.Message{ThreadId: c.threadID}).
+		Media(bytes.NewReader(c.raw), mediaOptions...).Context(ctx).Do()
 	if err != nil {
 		return nil, fmt.Errorf("send message: %w", err)
 	}
@@ -180,12 +186,10 @@ func toSendResult(m *gmailapi.Message) *SendResult {
 	return &SendResult{MessageID: m.Id, ThreadID: m.ThreadId, LabelIDs: nonNil(m.LabelIds)}
 }
 
-func (c *composed) message() *gmailapi.Message {
-	return &gmailapi.Message{
-		Raw:      base64.RawURLEncoding.EncodeToString(c.raw),
-		ThreadId: c.threadID,
-	}
-}
+// mediaOptions upload the raw message as message/rfc822 media in one
+// multipart request (uploadType=multipart, no chunking). Unlike the base64
+// "raw" field, media upload accepts messages up to Gmail's 35 MB limit.
+var mediaOptions = []googleapi.MediaOption{googleapi.ContentType("message/rfc822"), googleapi.ChunkSize(0)}
 
 // replyContext is what a reply needs from the original message.
 type replyContext struct {
@@ -202,6 +206,9 @@ type replyContext struct {
 func compose(ctx context.Context, svc *gmailapi.Service, in ComposeInput, now time.Time) (*composed, error) {
 	if in.ReplyAll && in.ReplyToMessageID == "" {
 		return nil, errors.New("reply_all requires a message to reply to")
+	}
+	if err := ValidateAttachments(in.Attachments); err != nil {
+		return nil, err
 	}
 	var (
 		rc   *replyContext
@@ -394,15 +401,27 @@ func buildMessage(in ComposeInput, rc *replyContext, self string, now time.Time)
 			hdr("References", strings.TrimSpace(rc.references+" "+rc.messageID))
 		}
 	}
-	hdr("Content-Type", "text/plain; charset=UTF-8")
-	hdr("Content-Transfer-Encoding", "quoted-printable")
-	buf.WriteString("\r\n")
-	qw := quotedprintable.NewWriter(&buf)
-	if _, err := qw.Write([]byte(in.Body)); err != nil {
-		return nil, fmt.Errorf("encode body: %w", err)
-	}
-	if err := qw.Close(); err != nil {
-		return nil, fmt.Errorf("encode body: %w", err)
+	if len(in.Attachments) > 0 {
+		if err := ValidateAttachments(in.Attachments); err != nil {
+			return nil, err
+		}
+		mw := multipart.NewWriter(&buf)
+		hdr("Content-Type", mime.FormatMediaType("multipart/mixed", map[string]string{"boundary": mw.Boundary()}))
+		buf.WriteString("\r\n")
+		if err := writeMultipartBody(mw, in.Body, in.Attachments); err != nil {
+			return nil, err
+		}
+	} else {
+		hdr("Content-Type", "text/plain; charset=UTF-8")
+		hdr("Content-Transfer-Encoding", "quoted-printable")
+		buf.WriteString("\r\n")
+		qw := quotedprintable.NewWriter(&buf)
+		if _, err := qw.Write([]byte(in.Body)); err != nil {
+			return nil, fmt.Errorf("encode body: %w", err)
+		}
+		if err := qw.Close(); err != nil {
+			return nil, fmt.Errorf("encode body: %w", err)
+		}
 	}
 	return &composed{
 		raw: buf.Bytes(), threadID: threadID, nTo: len(lists[0]) + len(lists[1]) + len(lists[2]),
