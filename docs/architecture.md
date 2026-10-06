@@ -403,6 +403,9 @@ Scope `chat.messages.create`.
 - Attachments: after resolving the space, each file is uploaded with `media.upload`
   (`/upload/v1/spaces/X/attachments:upload`, up to 200 MB per file, `chat.MaxAttachmentSize`), and the
   returned `attachmentDataRef`s are set on the created message. If an upload fails nothing is posted.
+  The API accepts several attachments in one message only when all are images or videos
+  (`400: Can't create a message that contains multiple attachments unless the attachments contain only
+  media`), so `Validate` rejects mixed sets before any upload.
   CLI `--attach PATH` is repeatable; MCP `attachments[]` items have exactly one of `path` (read on
   the machine running gwork) or `content_base64` + `filename`, plus an optional `content_type`.
   Chat blocks some file types; Drive files cannot be attached through the API (put the link in the text).

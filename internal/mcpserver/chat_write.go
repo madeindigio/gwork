@@ -20,7 +20,7 @@ type chatSendMessageInput struct {
 	Text      string `json:"text,omitempty" jsonschema:"message text, at most 4096 characters; required unless attachments are given"`
 	Thread    string `json:"thread,omitempty" jsonschema:"reply in this thread of the target space (spaces/S/threads/T); fails if the thread does not exist"`
 	// Attachments are files uploaded to the target space and attached to the message.
-	Attachments []uploadInput `json:"attachments,omitempty" jsonschema:"files to attach (at most 200 MB each); each item sets exactly one of path or content_base64"`
+	Attachments []uploadInput `json:"attachments,omitempty" jsonschema:"files to attach (at most 200 MB each); more than one file is accepted only when all are images or videos, otherwise send one message per file; each item sets exactly one of path or content_base64"`
 }
 
 // uploadInput is one file to upload, given either as a local path or as
@@ -72,7 +72,7 @@ func registerChatWrite(s *mcp.Server, deps Deps) {
 			"or as a reply in a thread. The message is delivered immediately to other people and cannot be undone by " +
 			"this server. Before calling, show the user the exact text, the target (space or user) and the names of any " +
 			"attachments and get their explicit confirmation; never send on your own initiative. Set exactly one of " +
-			"space and user_email. Attachments are uploaded to the space first; the text may be omitted when files are attached.",
+			"space and user_email. Attachments are uploaded to the space first; the text may be omitted when files are attached. Several attachments in one message must all be images or videos.",
 		Annotations: &mcp.ToolAnnotations{DestructiveHint: &destructive, IdempotentHint: false, OpenWorldHint: &openWorld},
 	}, func(ctx context.Context, in chatSendMessageInput) (chatSendMessageOutput, error) {
 		si := chat.SendInput{Space: in.Space, UserEmail: in.UserEmail, Text: in.Text, Thread: in.Thread}

@@ -92,6 +92,14 @@ func (in SendInput) Validate() (space, thread string, err error) {
 			return "", "", err
 		}
 	}
+	if len(in.Attachments) > 1 {
+		for _, u := range in.Attachments {
+			if !isMedia(u.contentType()) {
+				return "", "", fmt.Errorf("attachment %s is %s: Chat accepts several attachments in one message only when all are images or videos; send it in a separate message",
+					u.Filename, u.contentType())
+			}
+		}
+	}
 	if hasSpace {
 		if space, err = NormalizeSpace(in.Space); err != nil {
 			return "", "", err
@@ -158,10 +166,7 @@ func SendMessage(ctx context.Context, svc *chatapi.Service, in SendInput) (Messa
 // uploadAttachment uploads u to space and returns the reference to put in
 // the message.
 func uploadAttachment(ctx context.Context, svc *chatapi.Service, space string, u Upload) (*chatapi.AttachmentDataRef, error) {
-	ct := u.ContentType
-	if ct == "" {
-		ct = DetectContentType(u.Filename, u.Data)
-	}
+	ct := u.contentType()
 	resp, err := svc.Media.Upload(space, &chatapi.UploadAttachmentRequest{Filename: u.Filename}).
 		Media(bytes.NewReader(u.Data), googleapi.ContentType(ct)).Context(ctx).Do()
 	if err != nil {
@@ -171,6 +176,20 @@ func uploadAttachment(ctx context.Context, svc *chatapi.Service, space string, u
 		return nil, fmt.Errorf("upload attachment %s to %s: response has no attachment reference", u.Filename, space)
 	}
 	return resp.AttachmentDataRef, nil
+}
+
+// contentType returns ContentType, or the detected type when it is empty.
+func (u Upload) contentType() string {
+	if u.ContentType != "" {
+		return u.ContentType
+	}
+	return DetectContentType(u.Filename, u.Data)
+}
+
+// isMedia reports whether ct is an image or video type, the only kinds the
+// Chat API accepts when a message has more than one attachment.
+func isMedia(ct string) bool {
+	return strings.HasPrefix(ct, "image/") || strings.HasPrefix(ct, "video/")
 }
 
 // DetectContentType guesses the MIME type of a file from the extension of

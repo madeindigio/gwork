@@ -82,13 +82,15 @@ func attachMux(t *testing.T, ups *[]uploaded, msgs *[]map[string]any, failUpload
 func TestSendMessageAttachments(t *testing.T) {
 	a := Upload{Filename: "report.pdf", ContentType: "application/pdf", Data: []byte("%PDF-1.4 fake")}
 	b := Upload{Filename: "notes.txt", ContentType: "text/plain; charset=utf-8", Data: []byte("hello notes")}
+	img := Upload{Filename: "photo.png", ContentType: "image/png", Data: []byte("png data")}
+	vid := Upload{Filename: "clip.mp4", ContentType: "video/mp4", Data: []byte("mp4 data")}
 	tests := []struct {
 		name      string
 		in        SendInput
 		wantSpace string
 		wantText  any
 	}{
-		{name: "text and two files", in: SendInput{Space: "AAA", Text: "see files", Attachments: []Upload{a, b}},
+		{name: "text and two media files", in: SendInput{Space: "AAA", Text: "see files", Attachments: []Upload{img, vid}},
 			wantSpace: "AAA", wantText: "see files"},
 		{name: "attachment only", in: SendInput{Space: "spaces/AAA", Text: "  ", Attachments: []Upload{a}},
 			wantSpace: "AAA", wantText: nil},
@@ -155,13 +157,32 @@ func TestSendMessageDetectsContentType(t *testing.T) {
 	svc := newTestService(t, attachMux(t, &ups, &msgs, false))
 	_, err := SendMessage(context.Background(), svc, SendInput{Space: "AAA", Attachments: []Upload{
 		{Filename: "pic.png", Data: []byte("not really")},
-		{Filename: "noext", Data: []byte("%PDF-1.4")},
+		{Filename: "noext", Data: []byte("\x89PNG\r\n\x1a\n")},
 	}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(ups) != 2 || ups[0].contentType != "image/png" || ups[1].contentType != "application/pdf" {
+	if len(ups) != 2 || ups[0].contentType != "image/png" || ups[1].contentType != "image/png" {
 		t.Errorf("uploads %+v", ups)
+	}
+	if ct := DetectContentType("noext", []byte("%PDF-1.4")); ct != "application/pdf" {
+		t.Errorf("sniffed %q", ct)
+	}
+}
+
+func TestSendInputValidateMultipleAttachments(t *testing.T) {
+	img := Upload{Filename: "a.png", Data: []byte("x")}
+	vid := Upload{Filename: "b.mp4", Data: []byte("x")}
+	pdf := Upload{Filename: "c.pdf", Data: []byte("x")}
+	if _, _, err := (SendInput{Space: "AAA", Attachments: []Upload{img, vid}}).Validate(); err != nil {
+		t.Errorf("images and videos: %v", err)
+	}
+	if _, _, err := (SendInput{Space: "AAA", Attachments: []Upload{pdf}}).Validate(); err != nil {
+		t.Errorf("one document: %v", err)
+	}
+	_, _, err := SendInput{Space: "AAA", Attachments: []Upload{img, pdf}}.Validate()
+	if err == nil || !strings.Contains(err.Error(), "c.pdf") || !strings.Contains(err.Error(), "only when all are images or videos") {
+		t.Errorf("mixed: %v", err)
 	}
 }
 
