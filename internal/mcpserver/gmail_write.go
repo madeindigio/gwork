@@ -2,11 +2,8 @@ package mcpserver
 
 import (
 	"context"
-	"encoding/base64"
 	"errors"
 	"fmt"
-	"io"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -14,6 +11,7 @@ import (
 	"google.golang.org/api/option"
 
 	"github.com/madeindigio/gwork/internal/auth"
+	"github.com/madeindigio/gwork/internal/fsutil"
 	"github.com/madeindigio/gwork/internal/workspace/gmail"
 )
 
@@ -95,12 +93,12 @@ func (in gmailComposeInput) compose(ctx context.Context, opts []option.ClientOpt
 		var err error
 		switch sources[i] {
 		case "path":
-			att.Data, err = readAttachmentPath(a.Path, remaining)
+			att.Data, err = fsutil.ReadFile(a.Path, remaining)
 			if att.Filename == "" {
 				att.Filename = filepath.Base(a.Path)
 			}
 		case "content_base64":
-			att.Data, err = decodeAttachmentBase64(a.ContentBase64, remaining)
+			att.Data, err = decodeBase64Content(a.ContentBase64, remaining)
 		default:
 			var got *gmail.OutgoingAttachment
 			if got, err = gmail.GetAttachmentFile(ctx, a.MessageID, a.AttachmentID, opts...); err == nil {
@@ -128,59 +126,6 @@ func (in gmailComposeInput) compose(ctx context.Context, opts []option.ClientOpt
 		return out, err
 	}
 	return out, nil
-}
-
-// readAttachmentPath reads the local regular file at path, refusing files
-// larger than limit bytes before reading them.
-func readAttachmentPath(path string, limit int64) ([]byte, error) {
-	st, err := os.Stat(path)
-	if err != nil {
-		return nil, err
-	}
-	if !st.Mode().IsRegular() {
-		return nil, fmt.Errorf("%s is not a regular file", path)
-	}
-	if st.Size() > limit {
-		return nil, fmt.Errorf("%s is %d bytes: attachments total over the %d MB limit", path, st.Size(), gmail.MaxAttachmentBytes>>20)
-	}
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-	b, err := io.ReadAll(io.LimitReader(f, limit+1))
-	if err != nil {
-		return nil, fmt.Errorf("read %s: %w", path, err)
-	}
-	if int64(len(b)) > limit {
-		return nil, fmt.Errorf("%s grew past the size limit while reading", path)
-	}
-	return b, nil
-}
-
-// decodeAttachmentBase64 decodes base64 content in the standard or URL
-// alphabet, padded or not, ignoring whitespace, refusing results larger than
-// limit bytes. Its errors never include the content.
-func decodeAttachmentBase64(s string, limit int64) ([]byte, error) {
-	s = strings.Map(func(r rune) rune {
-		if r == ' ' || r == '\t' || r == '\r' || r == '\n' {
-			return -1
-		}
-		return r
-	}, s)
-	s = strings.TrimRight(s, "=")
-	if int64(base64.RawStdEncoding.DecodedLen(len(s))) > limit {
-		return nil, fmt.Errorf("content is over the %d MB attachment limit", gmail.MaxAttachmentBytes>>20)
-	}
-	enc := base64.RawStdEncoding
-	if strings.ContainsAny(s, "-_") {
-		enc = base64.RawURLEncoding
-	}
-	b, err := enc.DecodeString(s)
-	if err != nil {
-		return nil, errors.New("content_base64 is not valid base64")
-	}
-	return b, nil
 }
 
 type gmailSendDraftInput struct {

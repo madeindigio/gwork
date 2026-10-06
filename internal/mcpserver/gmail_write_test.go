@@ -418,7 +418,7 @@ func TestGmailComposeAttachmentsValidation(t *testing.T) {
 		{map[string]any{"content_base64": "SECRET!!PAYLOAD", "filename": "x"}, "not valid base64"},
 		{map[string]any{"path": filepath.Join(dir, "missing.pdf")}, "no such file"},
 		{map[string]any{"path": dir}, "not a regular file"},
-		{map[string]any{"path": big}, "over the 25 MB limit"},
+		{map[string]any{"path": big}, "the limit is 26214400 bytes"},
 		{map[string]any{"content_base64": "eA", "filename": "a\nb"}, "line breaks"},
 	}
 	cs, rec, logs := gmailAttachSession(t)

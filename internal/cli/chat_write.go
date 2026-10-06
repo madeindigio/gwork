@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/madeindigio/gwork/internal/auth"
+	"github.com/madeindigio/gwork/internal/fsutil"
 	"github.com/madeindigio/gwork/internal/output"
 	"github.com/madeindigio/gwork/internal/workspace/chat"
 )
@@ -76,13 +76,13 @@ func newChatSendCmd(app *App) *cobra.Command {
 			}
 			// Read attachments before validation, the dry run, the prompt and
 			// any network call, so a bad path never half-sends.
-			files, err := readUploadFiles(attach, chat.MaxAttachmentSize)
+			files, err := fsutil.ReadFiles(attach, chat.MaxAttachmentSize, 0)
 			if err != nil {
-				return err
+				return fmt.Errorf("attach: %w", err)
 			}
 			in := chat.SendInput{Space: space, UserEmail: to, Text: text, Thread: thread}
 			for _, f := range files {
-				in.Attachments = append(in.Attachments, chat.Upload{Filename: f.Name, ContentType: f.ContentType, Data: f.Data})
+				in.Attachments = append(in.Attachments, chat.Upload{Filename: f.Name, ContentType: chat.DetectContentType(f.Name, f.Data), Data: f.Data})
 			}
 			target, threadName, err := in.Validate()
 			if err != nil {
@@ -94,7 +94,7 @@ func newChatSendCmd(app *App) *cobra.Command {
 			if wf.DryRun {
 				p := chatSendPreview{Thread: threadName, Text: text}
 				for _, f := range files {
-					p.Attachments = append(p.Attachments, uploadPreview{Filename: f.Name, ContentType: f.ContentType, Size: int64(len(f.Data))})
+					p.Attachments = append(p.Attachments, uploadPreview{Filename: f.Name, ContentType: chat.DetectContentType(f.Name, f.Data), Size: int64(len(f.Data))})
 				}
 				if strings.TrimSpace(to) != "" {
 					p.To = target
@@ -182,54 +182,8 @@ func readTextFile(app *App, path string) (string, error) {
 	return strings.TrimRight(string(data), "\r\n"), nil
 }
 
-// uploadFile is a local file read into memory to be uploaded.
-type uploadFile struct {
-	// Name is the base name of the path.
-	Name string
-	// ContentType is guessed from the extension, else sniffed from Data.
-	ContentType string
-	// Data is the file content.
-	Data []byte
-}
-
-// readUploadFiles checks every path (regular file, at most maxBytes) before
-// reading any of them, then reads them all. It never touches the network.
-func readUploadFiles(paths []string, maxBytes int64) ([]uploadFile, error) {
-	for _, p := range paths {
-		fi, err := os.Stat(p)
-		if err != nil {
-			return nil, fmt.Errorf("attachment: %w", err)
-		}
-		if !fi.Mode().IsRegular() {
-			return nil, fmt.Errorf("attachment %s is not a regular file", p)
-		}
-		if fi.Size() > maxBytes {
-			return nil, fmt.Errorf("attachment %s is %s; the limit is %s", p, output.Bytes(fi.Size()), output.Bytes(maxBytes))
-		}
-	}
-	files := make([]uploadFile, 0, len(paths))
-	for _, p := range paths {
-		f, err := os.Open(p)
-		if err != nil {
-			return nil, fmt.Errorf("attachment: %w", err)
-		}
-		// Bound the read in case the file grew after the Stat.
-		data, err := io.ReadAll(io.LimitReader(f, maxBytes+1))
-		_ = f.Close()
-		if err != nil {
-			return nil, fmt.Errorf("read attachment %s: %w", p, err)
-		}
-		if int64(len(data)) > maxBytes {
-			return nil, fmt.Errorf("attachment %s is larger than %s", p, output.Bytes(maxBytes))
-		}
-		name := filepath.Base(p)
-		files = append(files, uploadFile{Name: name, ContentType: chat.DetectContentType(name, data), Data: data})
-	}
-	return files, nil
-}
-
 // describeUploads renders "a.pdf (1.2 MB), b.txt (12 B)" for prompts.
-func describeUploads(files []uploadFile) string {
+func describeUploads(files []fsutil.File) string {
 	parts := make([]string, 0, len(files))
 	for _, f := range files {
 		parts = append(parts, fmt.Sprintf("%s (%s)", f.Name, output.Bytes(int64(len(f.Data)))))

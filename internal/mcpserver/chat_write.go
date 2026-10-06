@@ -2,17 +2,15 @@ package mcpserver
 
 import (
 	"context"
-	"encoding/base64"
 	"errors"
 	"fmt"
-	"io"
-	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/madeindigio/gwork/internal/auth"
+	"github.com/madeindigio/gwork/internal/fsutil"
 	"github.com/madeindigio/gwork/internal/workspace/chat"
 )
 
@@ -49,50 +47,13 @@ func (u uploadInput) loadUpload(maxBytes int64) (name, contentType string, data 
 		return "", "", nil, errors.New("filename is required with content_base64")
 	}
 	if hasPath {
-		data, err = readLocalFile(u.Path, maxBytes)
+		data, err = fsutil.ReadFile(u.Path, maxBytes)
 		return filepath.Base(u.Path), u.ContentType, data, err
 	}
-	enc := strings.TrimSpace(u.ContentBase64)
-	if int64(base64.StdEncoding.DecodedLen(len(enc))) > maxBytes+2 {
-		return "", "", nil, fmt.Errorf("content_base64 decodes to more than %d bytes", maxBytes)
-	}
-	if data, err = base64.StdEncoding.DecodeString(enc); err != nil {
-		if data, err = base64.RawStdEncoding.DecodeString(enc); err != nil {
-			return "", "", nil, fmt.Errorf("content_base64 is not valid base64: %w", err)
-		}
-	}
-	if int64(len(data)) > maxBytes {
-		return "", "", nil, fmt.Errorf("content_base64 decodes to more than %d bytes", maxBytes)
+	if data, err = decodeBase64Content(u.ContentBase64, maxBytes); err != nil {
+		return "", "", nil, err
 	}
 	return u.Filename, u.ContentType, data, nil
-}
-
-// readLocalFile reads the regular file at path, refusing files larger than
-// maxBytes before reading them.
-func readLocalFile(path string, maxBytes int64) ([]byte, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-	fi, err := f.Stat()
-	if err != nil {
-		return nil, err
-	}
-	if !fi.Mode().IsRegular() {
-		return nil, fmt.Errorf("%s is not a regular file", path)
-	}
-	if fi.Size() > maxBytes {
-		return nil, fmt.Errorf("%s is %d bytes; the limit is %d bytes", path, fi.Size(), maxBytes)
-	}
-	data, err := io.ReadAll(io.LimitReader(f, maxBytes+1))
-	if err != nil {
-		return nil, fmt.Errorf("read %s: %w", path, err)
-	}
-	if int64(len(data)) > maxBytes {
-		return nil, fmt.Errorf("%s is larger than %d bytes", path, maxBytes)
-	}
-	return data, nil
 }
 
 type chatSendMessageOutput struct {

@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/madeindigio/gwork/internal/auth"
+	"github.com/madeindigio/gwork/internal/fsutil"
 	"github.com/madeindigio/gwork/internal/output"
 	"github.com/madeindigio/gwork/internal/workspace/gmail"
 )
@@ -59,9 +59,9 @@ func (f *composeFlags) input(app *App) (gmail.ComposeInput, error) {
 		}
 		body = b
 	}
-	files, err := readAttachFiles(f.attach, gmail.MaxAttachmentBytes)
+	files, err := fsutil.ReadFiles(f.attach, 0, gmail.MaxAttachmentBytes)
 	if err != nil {
-		return gmail.ComposeInput{}, err
+		return gmail.ComposeInput{}, fmt.Errorf("attach: %w", err)
 	}
 	var atts []gmail.OutgoingAttachment
 	for _, a := range files {
@@ -76,63 +76,6 @@ func (f *composeFlags) input(app *App) (gmail.ComposeInput, error) {
 		ReplyToMessageID: f.replyTo, ReplyAll: f.replyAll,
 		Attachments: atts,
 	}, nil
-}
-
-// attachFile is a local file read for an --attach flag.
-type attachFile struct {
-	// Path is the path as given; Name is its base name.
-	Path, Name string
-	Data       []byte
-}
-
-// readAttachFiles reads the files given with --attach. It first checks that
-// every path is a regular file and that their total size is at most
-// maxTotal bytes, so nothing is read when one is missing or too big. It
-// makes no network calls.
-func readAttachFiles(paths []string, maxTotal int64) ([]attachFile, error) {
-	var total int64
-	for _, p := range paths {
-		st, err := os.Stat(p)
-		if err != nil {
-			return nil, fmt.Errorf("attach: %w", err)
-		}
-		if !st.Mode().IsRegular() {
-			return nil, fmt.Errorf("attach: %s is not a regular file", p)
-		}
-		total += st.Size()
-	}
-	if total > maxTotal {
-		return nil, fmt.Errorf("attach: files total %s, over the %s limit", output.Bytes(total), output.Bytes(maxTotal))
-	}
-	out := make([]attachFile, 0, len(paths))
-	total = 0
-	for _, p := range paths {
-		b, err := readFileLimit(p, maxTotal-total)
-		if err != nil {
-			return nil, err
-		}
-		total += int64(len(b))
-		out = append(out, attachFile{Path: p, Name: filepath.Base(p), Data: b})
-	}
-	return out, nil
-}
-
-// readFileLimit reads path, failing when it is larger than limit bytes (the
-// file may have grown since it was checked).
-func readFileLimit(path string, limit int64) ([]byte, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, fmt.Errorf("attach: %w", err)
-	}
-	defer f.Close()
-	b, err := io.ReadAll(io.LimitReader(f, limit+1))
-	if err != nil {
-		return nil, fmt.Errorf("attach: read %s: %w", path, err)
-	}
-	if int64(len(b)) > limit {
-		return nil, fmt.Errorf("attach: %s grew past the size limit while reading", path)
-	}
-	return b, nil
 }
 
 // formatAttachments renders attachment names and sizes for a confirmation

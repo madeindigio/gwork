@@ -528,8 +528,8 @@ func TestGmailAttachValidation(t *testing.T) {
 	}{
 		{"missing", []string{"--attach", filepath.Join(dir, "nope.pdf")}, "no such file"},
 		{"directory", []string{"--attach", dir}, "not a regular file"},
-		{"too big", []string{"--attach", big}, "over the 25.0 MiB limit"},
-		{"too big in total", []string{"--attach", small, "--attach", big}, "over the 25.0 MiB limit"},
+		{"too big", []string{"--attach", big}, "the limit is 26214400 bytes"},
+		{"too big in total", []string{"--attach", small, "--attach", big}, "the limit is 26214400 bytes"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

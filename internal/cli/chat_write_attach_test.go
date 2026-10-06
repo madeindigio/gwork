@@ -7,11 +7,11 @@ import (
 	"mime"
 	"mime/multipart"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/madeindigio/gwork/internal/fsutil"
 	"github.com/madeindigio/gwork/internal/testutil"
 )
 
@@ -52,15 +52,6 @@ func newChatAttachFake(t *testing.T) (*chatSendFake, *[]chatUpload, *http.ServeM
 		testutil.WriteJSON(t, w, map[string]any{"attachmentDataRef": map[string]any{"attachmentUploadToken": "tok-" + req["filename"]}})
 	})
 	return f, &ups, mux
-}
-
-func writeTemp(t *testing.T, dir, name, content string) string {
-	t.Helper()
-	p := filepath.Join(dir, name)
-	if err := os.WriteFile(p, []byte(content), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	return p
 }
 
 func TestChatSendAttach(t *testing.T) {
@@ -142,9 +133,9 @@ func TestChatSendAttachErrors(t *testing.T) {
 		args    []string
 		wantErr string
 	}{
-		{name: "missing", args: []string{"--attach", filepath.Join(dir, "nope.txt")}, wantErr: "attachment:"},
+		{name: "missing", args: []string{"--attach", filepath.Join(dir, "nope.txt")}, wantErr: "attach:"},
 		{name: "directory", args: []string{"--attach", dir}, wantErr: "not a regular file"},
-		{name: "missing after good", args: []string{"--attach", ok, "--attach", filepath.Join(dir, "nope")}, wantErr: "attachment:"},
+		{name: "missing after good", args: []string{"--attach", ok, "--attach", filepath.Join(dir, "nope")}, wantErr: "attach:"},
 		{name: "neither text nor attach", args: nil, wantErr: "--attach"},
 	}
 	for _, tc := range tests {
@@ -170,10 +161,10 @@ func TestChatSendAttachErrors(t *testing.T) {
 func TestReadUploadFilesLimit(t *testing.T) {
 	dir := t.TempDir()
 	p := writeTemp(t, dir, "big.bin", "0123456789")
-	if _, err := readUploadFiles([]string{p}, 9); err == nil || !strings.Contains(err.Error(), "limit") {
+	if _, err := fsutil.ReadFiles([]string{p}, 9, 0); err == nil || !strings.Contains(err.Error(), "limit") {
 		t.Errorf("err = %v", err)
 	}
-	files, err := readUploadFiles([]string{p}, 10)
+	files, err := fsutil.ReadFiles([]string{p}, 10, 0)
 	if err != nil || len(files) != 1 || string(files[0].Data) != "0123456789" || files[0].Name != "big.bin" {
 		t.Errorf("files %+v err %v", files, err)
 	}
