@@ -4,6 +4,10 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
+	"io"
+	"mime"
+	"mime/multipart"
 	"net/http"
 	"net/mail"
 	"os"
@@ -29,16 +33,15 @@ func newGmailWriteMux(t *testing.T) (*http.ServeMux, *gmailWriteServer) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		key := r.Method + " " + r.URL.Path
-		var b map[string]any
-		_ = json.NewDecoder(r.Body).Decode(&b)
+		b := decodeGmailRequest(t, r)
 		rec.mu.Lock()
 		rec.calls = append(rec.calls, key)
 		rec.body[key] = b
 		rec.mu.Unlock()
 		switch key {
-		case "POST /gmail/v1/users/me/messages/send":
+		case "POST /upload/gmail/v1/users/me/messages/send":
 			testutil.WriteJSON(t, w, map[string]any{"id": "sent1", "threadId": "t1", "labelIds": []string{"SENT"}})
-		case "POST /gmail/v1/users/me/drafts":
+		case "POST /upload/gmail/v1/users/me/drafts":
 			testutil.WriteJSON(t, w, map[string]any{"id": "d1", "message": map[string]any{"id": "m1", "threadId": "t1"}})
 		case "POST /gmail/v1/users/me/drafts/send":
 			testutil.WriteJSON(t, w, map[string]any{"id": "sent2", "threadId": "t2"})
@@ -68,6 +71,52 @@ func newGmailWriteMux(t *testing.T) (*http.ServeMux, *gmailWriteServer) {
 		}
 	})
 	return mux, rec
+}
+
+// decodeGmailRequest decodes a JSON request body. A media upload
+// (multipart/related: JSON metadata, then the message/rfc822 media) is
+// returned as its metadata with the message added as base64url "raw", in
+// "message" when the metadata has one (drafts), like a non-upload request.
+func decodeGmailRequest(t *testing.T, r *http.Request) map[string]any {
+	t.Helper()
+	var b map[string]any
+	mt, params, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err != nil || mt != "multipart/related" {
+		_ = json.NewDecoder(r.Body).Decode(&b)
+		return b
+	}
+	if r.URL.Query().Get("uploadType") != "multipart" {
+		t.Errorf("uploadType = %q", r.URL.Query().Get("uploadType"))
+	}
+	mr := multipart.NewReader(r.Body, params["boundary"])
+	meta, err := mr.NextPart()
+	if err != nil {
+		t.Errorf("upload metadata: %v", err)
+		return nil
+	}
+	if err := json.NewDecoder(meta).Decode(&b); err != nil {
+		t.Errorf("upload metadata: %v", err)
+		return nil
+	}
+	media, err := mr.NextPart()
+	if err != nil {
+		t.Errorf("upload media: %v", err)
+		return nil
+	}
+	if ct := media.Header.Get("Content-Type"); ct != "message/rfc822" {
+		t.Errorf("media content type %q", ct)
+	}
+	raw, err := io.ReadAll(media)
+	if err != nil {
+		t.Errorf("upload media: %v", err)
+		return nil
+	}
+	dst := b
+	if m, ok := b["message"].(map[string]any); ok {
+		dst = m
+	}
+	dst["raw"] = base64.RawURLEncoding.EncodeToString(raw)
+	return b
 }
 
 func (s *gmailWriteServer) count() int {
@@ -173,7 +222,7 @@ func TestGmailSendYesJSON(t *testing.T) {
 	if err := json.Unmarshal([]byte(stdout), &res); err != nil || res.MessageID != "sent1" || res.ThreadID != "t1" {
 		t.Fatalf("stdout %q: %v", stdout, err)
 	}
-	m := rawOf(t, rec.body["POST /gmail/v1/users/me/messages/send"])
+	m := rawOf(t, rec.body["POST /upload/gmail/v1/users/me/messages/send"])
 	if m.Header.Get("Cc") == "" || m.Header.Get("Subject") != "Hi" {
 		t.Errorf("headers %v", m.Header)
 	}
@@ -216,7 +265,7 @@ func TestGmailBodyFromStdin(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("code %d %s", code, stderr)
 	}
-	m := rawOf(t, rec.body["POST /gmail/v1/users/me/drafts"])
+	m := rawOf(t, rec.body["POST /upload/gmail/v1/users/me/drafts"])
 	b := make([]byte, 64)
 	n, _ := m.Body.Read(b)
 	if !strings.Contains(string(b[:n]), "stdin body") {
@@ -357,5 +406,143 @@ func TestGmailWriteAPIErrorHint(t *testing.T) {
 	_, stderr, code := runCLI(t, testutil.NewFakeProvider(t, mux), "gmail", "archive", "nope")
 	if code == 0 || !strings.Contains(stderr, "not found") || !strings.Contains(stderr, "nope") {
 		t.Fatalf("code %d stderr %q", code, stderr)
+	}
+}
+
+// attachParts returns the decoded attachment parts of a multipart/mixed
+// message by filename.
+func attachParts(t *testing.T, m *mail.Message) map[string][]byte {
+	t.Helper()
+	mt, params, err := mime.ParseMediaType(m.Header.Get("Content-Type"))
+	if err != nil || mt != "multipart/mixed" {
+		t.Fatalf("content type %q: %v", m.Header.Get("Content-Type"), err)
+	}
+	out := map[string][]byte{}
+	mr := multipart.NewReader(m.Body, params["boundary"])
+	for {
+		p, err := mr.NextRawPart()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, dp, _ := mime.ParseMediaType(p.Header.Get("Content-Disposition"))
+		if dp["filename"] == "" {
+			continue
+		}
+		enc, _ := io.ReadAll(p)
+		data, err := base64.StdEncoding.DecodeString(strings.ReplaceAll(string(enc), "\r\n", ""))
+		if err != nil {
+			t.Fatal(err)
+		}
+		out[dp["filename"]] = data
+	}
+	return out
+}
+
+func writeTemp(t *testing.T, dir, name, content string) string {
+	t.Helper()
+	p := filepath.Join(dir, name)
+	if err := os.WriteFile(p, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+func TestGmailSendAttachments(t *testing.T) {
+	dir := t.TempDir()
+	a := writeTemp(t, dir, "report.pdf", "%PDF-1.4 data")
+	b := writeTemp(t, dir, "notas, año.txt", "hola")
+	mux, rec := newGmailWriteMux(t)
+	_, stderr, code := runCLI(t, testutil.NewFakeProvider(t, mux),
+		"gmail", "send", "--to", "a@b.com", "--subject", "Docs", "--body", "attached", "--attach", a, "--attach", b, "--yes")
+	if code != 0 {
+		t.Fatalf("code %d %s", code, stderr)
+	}
+	got := attachParts(t, rawOf(t, rec.body["POST /upload/gmail/v1/users/me/messages/send"]))
+	if string(got["report.pdf"]) != "%PDF-1.4 data" || string(got["notas, año.txt"]) != "hola" || len(got) != 2 {
+		t.Errorf("attachments = %q", got)
+	}
+
+	mux, rec = newGmailWriteMux(t)
+	_, stderr, code = runCLI(t, testutil.NewFakeProvider(t, mux), "gmail", "draft", "create", "--to", "a@b.com", "--attach", a)
+	if code != 0 {
+		t.Fatalf("draft: code %d %s", code, stderr)
+	}
+	if got := attachParts(t, rawOf(t, rec.body["POST /upload/gmail/v1/users/me/drafts"])); len(got) != 1 {
+		t.Errorf("draft attachments = %q", got)
+	}
+}
+
+func TestGmailAttachDryRunAndPrompt(t *testing.T) {
+	dir := t.TempDir()
+	a := writeTemp(t, dir, "report.pdf", strings.Repeat("x", 2048))
+	mux, rec := newGmailWriteMux(t)
+	p := testutil.NewFakeProvider(t, mux)
+	stdout, stderr, code := runCLI(t, p, "gmail", "send", "--to", "a@b.com", "--attach", a, "--dry-run", "--json")
+	if code != 0 {
+		t.Fatalf("code %d %s", code, stderr)
+	}
+	var v struct {
+		Message struct {
+			Attachments []map[string]any `json:"attachments"`
+		} `json:"message"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &v); err != nil || len(v.Message.Attachments) != 1 {
+		t.Fatalf("stdout %q: %v", stdout, err)
+	}
+	if at := v.Message.Attachments[0]; at["filename"] != "report.pdf" || at["size"] != float64(2048) || strings.Contains(stdout, "xxxx") {
+		t.Errorf("dry-run attachment %v", at)
+	}
+	if rec.count() != 0 {
+		t.Fatalf("dry run made calls: %v", rec.calls)
+	}
+
+	app, _, errBuf := newTestApp(t, p)
+	app.In, app.IsTerminal = strings.NewReader("n\n"), func() bool { return true }
+	if code := app.Run(context.Background(), []string{"gmail", "send", "--to", "a@b.com", "--attach", a}); code == 0 {
+		t.Fatal("declined send succeeded")
+	}
+	if !strings.Contains(errBuf.String(), "Attachments: report.pdf (2.0 KiB)") {
+		t.Errorf("prompt %q lacks attachments", errBuf.String())
+	}
+}
+
+func TestGmailAttachValidation(t *testing.T) {
+	dir := t.TempDir()
+	big := filepath.Join(dir, "big.bin")
+	f, err := os.Create(big)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Truncate(25<<20 + 1); err != nil { // sparse: nothing is written
+		t.Fatal(err)
+	}
+	f.Close()
+	small := writeTemp(t, dir, "small.txt", "x")
+	cases := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"missing", []string{"--attach", filepath.Join(dir, "nope.pdf")}, "no such file"},
+		{"directory", []string{"--attach", dir}, "not a regular file"},
+		{"too big", []string{"--attach", big}, "the limit is 26214400 bytes"},
+		{"too big in total", []string{"--attach", small, "--attach", big}, "the limit is 26214400 bytes"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			for _, base := range [][]string{
+				{"gmail", "send", "--to", "a@b.com"}, // checked before the confirmation prompt (no --yes, no TTY)
+				{"gmail", "draft", "create", "--to", "a@b.com"},
+			} {
+				mux, rec := newGmailWriteMux(t)
+				_, stderr, code := runCLI(t, testutil.NewFakeProvider(t, mux), append(base, c.args...)...)
+				if code == 0 || !strings.Contains(stderr, c.want) || rec.count() != 0 {
+					t.Errorf("%v: code %d stderr %q calls %v", base, code, stderr, rec.calls)
+				}
+			}
+		})
 	}
 }

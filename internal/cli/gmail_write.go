@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/madeindigio/gwork/internal/auth"
+	"github.com/madeindigio/gwork/internal/fsutil"
 	"github.com/madeindigio/gwork/internal/output"
 	"github.com/madeindigio/gwork/internal/workspace/gmail"
 )
@@ -25,6 +26,7 @@ type composeFlags struct {
 	bodyFile    string
 	replyTo     string
 	replyAll    bool
+	attach      []string
 }
 
 func (f *composeFlags) add(cmd *cobra.Command) {
@@ -37,9 +39,11 @@ func (f *composeFlags) add(cmd *cobra.Command) {
 	fl.StringVar(&f.bodyFile, "body-file", "", "read the body from this file, or from stdin with -")
 	fl.StringVar(&f.replyTo, "reply-to", "", "ID of the message to reply to (same thread, recipient defaults to its Reply-To/From)")
 	fl.BoolVar(&f.replyAll, "reply-all", false, "with --reply-to, also address the original To and Cc recipients")
+	fl.StringArrayVar(&f.attach, "attach", nil, "attach this file (repeatable; at most 25 MB in total)")
 }
 
-// input validates the flags and reads the body.
+// input validates the flags and reads the body and the attached files. It
+// makes no network calls.
 func (f *composeFlags) input(app *App) (gmail.ComposeInput, error) {
 	if f.body != "" && f.bodyFile != "" {
 		return gmail.ComposeInput{}, errors.New("--body and --body-file are mutually exclusive")
@@ -55,11 +59,41 @@ func (f *composeFlags) input(app *App) (gmail.ComposeInput, error) {
 		}
 		body = b
 	}
+	files, err := fsutil.ReadFiles(f.attach, 0, gmail.MaxAttachmentBytes)
+	if err != nil {
+		return gmail.ComposeInput{}, fmt.Errorf("attach: %w", err)
+	}
+	var atts []gmail.OutgoingAttachment
+	for _, a := range files {
+		atts = append(atts, gmail.OutgoingAttachment{Filename: a.Name, Data: a.Data})
+	}
+	if err := gmail.ValidateAttachments(atts); err != nil {
+		return gmail.ComposeInput{}, err
+	}
 	return gmail.ComposeInput{
 		To: f.to, Cc: f.cc, Bcc: f.bcc,
 		Subject: f.subject, Body: body,
 		ReplyToMessageID: f.replyTo, ReplyAll: f.replyAll,
+		Attachments: atts,
 	}, nil
+}
+
+// formatAttachments renders attachment names and sizes for a confirmation
+// prompt, e.g. " Attachments: a.pdf (1.2 MiB), b.txt (12 B)." or "" when
+// there are none.
+func formatAttachments(atts []gmail.OutgoingAttachment) string {
+	if len(atts) == 0 {
+		return ""
+	}
+	parts := make([]string, len(atts))
+	for i, a := range atts {
+		size := output.Bytes(a.Size())
+		if size == "" {
+			size = "0 B"
+		}
+		parts[i] = fmt.Sprintf("%s (%s)", a.Filename, size)
+	}
+	return " Attachments: " + output.Ellipsize(strings.Join(parts, ", "), 300) + "."
 }
 
 func readBodyFile(app *App, path string) (string, error) {
@@ -124,7 +158,8 @@ func newGmailDraftCreateCmd(app *App) *cobra.Command {
 		Long: "Create a draft, optionally as a reply. Nothing is sent; send it later with\n" +
 			"'gwork gmail draft send', or from Gmail.\n" +
 			"  gwork gmail draft create --to ana@example.com --subject Hi --body 'Hello'\n" +
-			"  gwork gmail draft create --reply-to 18a1b2 --body-file reply.txt",
+			"  gwork gmail draft create --reply-to 18a1b2 --body-file reply.txt\n" +
+			"  gwork gmail draft create --to ana@example.com --subject Report --attach report.pdf --attach data.csv",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			in, err := cf.input(app)
@@ -205,7 +240,8 @@ func newGmailSendCmd(app *App) *cobra.Command {
 		Long: "Send a plain-text email, optionally as a reply. Sending cannot be undone, so\n" +
 			"you are asked to confirm unless you pass --yes.\n" +
 			"  gwork gmail send --to ana@example.com --subject Hi --body 'Hello'\n" +
-			"  gwork gmail send --reply-to 18a1b2 --reply-all --body-file - < reply.txt --yes",
+			"  gwork gmail send --reply-to 18a1b2 --reply-all --body-file - < reply.txt --yes\n" +
+			"  gwork gmail send --to ana@example.com --subject Report --body 'Attached' --attach report.pdf",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if cf.bodyFile == "-" && !wf.Yes && !wf.DryRun {
@@ -230,7 +266,7 @@ func newGmailSendCmd(app *App) *cobra.Command {
 			if err != nil {
 				return classifyWrite(err, auth.Gmail)
 			}
-			summary := fmt.Sprintf("Send email %q. %s.", output.Ellipsize(r.Subject, 60), formatRecipients(r))
+			summary := fmt.Sprintf("Send email %q. %s.%s", output.Ellipsize(r.Subject, 60), formatRecipients(r), formatAttachments(in.Attachments))
 			if err := app.confirmWrite(wf, summary); err != nil {
 				return err
 			}

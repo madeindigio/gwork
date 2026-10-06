@@ -21,20 +21,20 @@ func textPart(mimeType, contentType, body string) *gmailapi.MessagePart {
 	}
 }
 
-func multipart(mimeType string, parts ...*gmailapi.MessagePart) *gmailapi.MessagePart {
+func multipartNode(mimeType string, parts ...*gmailapi.MessagePart) *gmailapi.MessagePart {
 	return &gmailapi.MessagePart{MimeType: mimeType, Body: &gmailapi.MessagePartBody{}, Parts: parts}
 }
 
 // Fixtures modelled on real Gmail API format=full payloads.
 var (
-	fixtureAlternative = multipart("multipart/alternative",
+	fixtureAlternative = multipartNode("multipart/alternative",
 		textPart("text/plain", `text/plain; charset="UTF-8"`, "Hello Bob,\r\n\r\nSee you tomorrow.\r\n"),
 		textPart("text/html", `text/html; charset="UTF-8"`, "<div>Hello <b>Bob</b>,</div><div>See you tomorrow.</div>"),
 	)
 
-	fixtureMixed = multipart("multipart/mixed",
-		multipart("multipart/related",
-			multipart("multipart/alternative",
+	fixtureMixed = multipartNode("multipart/mixed",
+		multipartNode("multipart/related",
+			multipartNode("multipart/alternative",
 				textPart("text/plain", "text/plain; charset=utf-8", "Report attached."),
 				textPart("text/html", "text/html; charset=utf-8", "<p>Report attached.</p>"),
 			),
@@ -69,7 +69,7 @@ var (
 		Body:     &gmailapi.MessagePartBody{Data: base64.URLEncoding.EncodeToString([]byte("Caf\xe9 con le\xf1a")), Size: 13},
 	}
 
-	fixtureNoBody = multipart("multipart/mixed",
+	fixtureNoBody = multipartNode("multipart/mixed",
 		&gmailapi.MessagePart{MimeType: "text/plain", Body: &gmailapi.MessagePartBody{Size: 0}},
 		&gmailapi.MessagePart{MimeType: "text/plain"},
 	)
