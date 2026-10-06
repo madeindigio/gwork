@@ -2,7 +2,6 @@ package gmail
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"io"
 	"mime"
@@ -26,15 +25,6 @@ func parseRaw(t *testing.T, raw []byte) (*mail.Message, string) {
 	}
 	body, _ := io.ReadAll(m.Body)
 	return m, string(body)
-}
-
-func decodeRaw(t *testing.T, s string) []byte {
-	t.Helper()
-	b, err := base64.RawURLEncoding.DecodeString(s)
-	if err != nil {
-		t.Fatalf("raw is not base64url: %v", err)
-	}
-	return b
 }
 
 func TestBuildMessageBasic(t *testing.T) {
@@ -231,13 +221,14 @@ func replyMux(t *testing.T, mux *http.ServeMux) {
 }
 
 func TestSendMessage(t *testing.T) {
-	var got map[string]any
+	var (
+		got map[string]any
+		raw []byte
+	)
 	mux := http.NewServeMux()
 	replyMux(t, mux)
-	mux.HandleFunc("POST /gmail/v1/users/me/messages/send", func(w http.ResponseWriter, r *http.Request) {
-		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
-			t.Error(err)
-		}
+	mux.HandleFunc("POST /upload/gmail/v1/users/me/messages/send", func(w http.ResponseWriter, r *http.Request) {
+		got, raw = parseUpload(t, r)
 		testutil.WriteJSON(t, w, map[string]any{"id": "sent1", "threadId": "thr9", "labelIds": []string{"SENT"}})
 	})
 	res, err := SendMessage(context.Background(), ComposeInput{ReplyToMessageID: "orig", ReplyAll: true, Body: "ok"}, testutil.FakeGoogle(t, mux)...)
@@ -250,7 +241,10 @@ func TestSendMessage(t *testing.T) {
 	if got["threadId"] != "thr9" {
 		t.Errorf("threadId = %v", got["threadId"])
 	}
-	m, body := parseRaw(t, decodeRaw(t, got["raw"].(string)))
+	if _, ok := got["raw"]; ok {
+		t.Errorf("raw must not be sent in the metadata")
+	}
+	m, body := parseRaw(t, raw)
 	if s := m.Header.Get("Subject"); s != "Re: Plan" {
 		t.Errorf("subject %q", s)
 	}
@@ -275,10 +269,13 @@ func TestSendMessageNoRecipients(t *testing.T) {
 }
 
 func TestCreateDraft(t *testing.T) {
-	var got map[string]any
+	var (
+		got map[string]any
+		raw []byte
+	)
 	mux := http.NewServeMux()
-	mux.HandleFunc("POST /gmail/v1/users/me/drafts", func(w http.ResponseWriter, r *http.Request) {
-		_ = json.NewDecoder(r.Body).Decode(&got)
+	mux.HandleFunc("POST /upload/gmail/v1/users/me/drafts", func(w http.ResponseWriter, r *http.Request) {
+		got, raw = parseUpload(t, r)
 		testutil.WriteJSON(t, w, map[string]any{"id": "d1", "message": map[string]any{"id": "m1", "threadId": "t1", "labelIds": []string{"DRAFT"}}})
 	})
 	res, err := CreateDraft(context.Background(), ComposeInput{To: []string{"a@b.com"}, Subject: "Hi", Body: "text"}, testutil.FakeGoogle(t, mux)...)
@@ -289,7 +286,7 @@ func TestCreateDraft(t *testing.T) {
 		t.Errorf("result = %+v", res)
 	}
 	msg := got["message"].(map[string]any)
-	m, _ := parseRaw(t, decodeRaw(t, msg["raw"].(string)))
+	m, _ := parseRaw(t, raw)
 	if m.Header.Get("Subject") != "Hi" {
 		t.Errorf("subject %q", m.Header.Get("Subject"))
 	}

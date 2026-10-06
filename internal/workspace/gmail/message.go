@@ -99,15 +99,7 @@ func GetAttachment(ctx context.Context, messageID, attachmentID string, opts ...
 	if err != nil {
 		return nil, err
 	}
-	b, err := svc.Users.Messages.Attachments.Get(userID, messageID, attachmentID).Context(ctx).Do()
-	if err != nil {
-		return nil, fmt.Errorf("get attachment of message %s: %w", messageID, err)
-	}
-	data, err := decodeBase64URL(b.Data)
-	if err != nil {
-		return nil, fmt.Errorf("decode attachment of message %s: %w", messageID, err)
-	}
-	return data, nil
+	return getAttachmentData(ctx, svc, messageID, attachmentID)
 }
 
 // ListLabels returns the account's labels: system labels first, then user
