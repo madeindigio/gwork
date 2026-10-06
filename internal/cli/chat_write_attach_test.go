@@ -56,8 +56,8 @@ func newChatAttachFake(t *testing.T) (*chatSendFake, *[]chatUpload, *http.ServeM
 
 func TestChatSendAttach(t *testing.T) {
 	dir := t.TempDir()
-	csv := writeTemp(t, dir, "data.csv", "a,b\n1,2\n")
-	blob := writeTemp(t, dir, "blob", "%PDF-1.4 no extension")
+	csv := writeTemp(t, dir, "data.png", "png data")
+	blob := writeTemp(t, dir, "blob", "\x89PNG\r\n\x1a\n no extension")
 	f, ups, mux := newChatAttachFake(t)
 	_, stderr, code := runCLI(t, testutil.NewFakeProvider(t, mux), "chat", "send", "--to", "ana@digio.es",
 		"--attach", csv, "--attach", blob, "--yes")
@@ -68,11 +68,11 @@ func TestChatSendAttach(t *testing.T) {
 		t.Fatalf("uploads %+v", *ups)
 	}
 	u0, u1 := (*ups)[0], (*ups)[1]
-	if u0.space != "DM1" || u0.filename != "data.csv" || !strings.HasPrefix(u0.contentType, "text/csv") || u0.data != "a,b\n1,2\n" {
+	if u0.space != "DM1" || u0.filename != "data.png" || u0.contentType != "image/png" || u0.data != "png data" {
 		t.Errorf("upload 0 %+v", u0)
 	}
-	if u1.filename != "blob" || u1.contentType != "application/pdf" {
-		t.Errorf("upload 1 %+v (want sniffed application/pdf)", u1)
+	if u1.filename != "blob" || u1.contentType != "image/png" {
+		t.Errorf("upload 1 %+v (want sniffed image/png)", u1)
 	}
 	if len(f.bodies) != 1 {
 		t.Fatalf("bodies %+v", f.bodies)

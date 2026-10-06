@@ -51,10 +51,11 @@ func newChatSendCmd(app *App) *cobra.Command {
 			"thread of the target space (spaces/X/threads/Y). --text-file - reads the\n" +
 			"text from stdin, which then requires --yes or --dry-run.\n\n" +
 			"--attach uploads a local file as an attachment (repeatable, at most 200 MB\n" +
-			"each); the text is optional when at least one file is attached.",
+			"each); the text is optional when at least one file is attached. Several\n" +
+			"files in one message must all be images or videos.",
 		Example: "  gwork chat send --space spaces/AAAA --text 'Deploy done' --yes\n" +
 			"  gwork chat send --to ana@example.com --text-file msg.txt\n" +
-			"  gwork chat send --space spaces/AAAA --text 'Report' --attach report.pdf --attach data.csv",
+			"  gwork chat send --space spaces/AAAA --text 'Report' --attach photo.png --attach chart.jpg",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()

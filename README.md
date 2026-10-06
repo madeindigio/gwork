@@ -276,7 +276,7 @@ default `hd` hint). The OAuth client is never a build input.
 ## Limitations
 
 - **Writes are limited**: Drive is read-only; Gmail bodies are plain text
-  (attachments up to 25 MB in total; Chat up to 200 MB per file); `chat send` only posts to existing spaces and DMs (it
+  (attachments up to 25 MB in total; Chat up to 200 MB per file, several per message only if all are images or videos); `chat send` only posts to existing spaces and DMs (it
   never creates spaces).
 - **Chat search is client-side**: Google Chat has no user-level full-text
   search API, so `chat search` lists the messages of your spaces since `--since`

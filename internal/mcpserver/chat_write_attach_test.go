@@ -90,13 +90,22 @@ func TestChatSendMessageAttachments(t *testing.T) {
 		want    []mcpUpload
 		wantErr string
 	}{
-		{name: "path and base64", args: map[string]any{"space": "AAA", "text": "files", "attachments": []any{
+		{name: "path", args: map[string]any{"space": "AAA", "text": "files", "attachments": []any{
 			map[string]any{"path": path},
-			map[string]any{"filename": "note.bin", "content_base64": b64, "content_type": "application/x-test"},
 		}}, want: []mcpUpload{
 			{"AAA", "report.csv", "text/csv; charset=utf-8", "a,b\n"},
-			{"AAA", "note.bin", "application/x-test", "TOP-SECRET-CONTENT"},
 		}},
+		{name: "two media files", args: map[string]any{"space": "AAA", "text": "pics", "attachments": []any{
+			map[string]any{"filename": "a.png", "content_base64": b64},
+			map[string]any{"filename": "note.bin", "content_base64": b64, "content_type": "video/x-test"},
+		}}, want: []mcpUpload{
+			{"AAA", "a.png", "image/png", "TOP-SECRET-CONTENT"},
+			{"AAA", "note.bin", "video/x-test", "TOP-SECRET-CONTENT"},
+		}},
+		{name: "several documents", args: map[string]any{"space": "AAA", "attachments": []any{
+			map[string]any{"path": path},
+			map[string]any{"filename": "a.png", "content_base64": b64},
+		}}, wantErr: "only when all are images or videos"},
 		{name: "attachment only dm", args: map[string]any{"user_email": "bob@digio.es", "attachments": []any{
 			map[string]any{"filename": "n.txt", "content_base64": strings.TrimRight(b64, "=")},
 		}}, want: []mcpUpload{{"DM1", "n.txt", "text/plain; charset=utf-8", "TOP-SECRET-CONTENT"}}},
