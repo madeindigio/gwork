@@ -2,12 +2,14 @@
 id: GWORK-US-0035
 type: story
 title: "Gmail attachments: multipart MIME, media upload, CLI --attach, MCP attachments"
-status: backlog
+status: done
 parent: GWORK-EP-0011
 author: mcp
 labels: [write, gmail, mcp]
 created: 2026-10-06T10:21:42Z
-updated: 2026-10-06T10:21:42Z
+updated: 2026-10-06T10:32:37Z
+started: 2026-10-06T10:22:29Z
+closed: 2026-10-06T10:32:37Z
 ---
 
 ## Description

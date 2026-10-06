@@ -312,11 +312,24 @@ opt-in scopes, the opt-in tools, a separate switch for sending, draft-first
 guidance, tool annotations that let clients ask for confirmation, and an audit
 trail.
 
+Attachments add an exfiltration path: an injected instruction could ask the
+agent to attach a local file (keys, tokens) and send it. MCP `path` inputs are
+deliberately **not** restricted to a directory: the agent that calls gwork
+already has filesystem access and could copy any file into an allowed folder,
+so an allowlist would not remove the risk. The control is the client's
+tool-call risk classification and user confirmation (send tools are
+destructive and open-world), plus `--allow-send` for mail. The audit line
+records no attachment content.
+
 ### Gmail
 
 Scope `gmail.modify`. `workspace/gmail` builds RFC 5322 messages itself (`net/mail` address validation, CR/LF rejected
 in every header value, RFC 2047 Q-encoding for non-ASCII subject and display names, `text/plain;
-charset=UTF-8`, quoted-printable body, base64url `raw`). Replies fetch the original (metadata),
+charset=UTF-8`, quoted-printable body). With attachments the message is `multipart/mixed`: the text part
+first, then one base64 part per file (Content-Type from the given type, the extension or content sniffing;
+`Content-Disposition` built with `mime.FormatMediaType`, so non-ASCII names use RFC 2231). Messages and
+drafts are sent with media upload (`/upload/gmail/v1/...`, `message/rfc822`, single multipart request),
+not as `raw` in the JSON body. Attachments total at most 25 MB (`gmail.MaxAttachmentBytes`). Replies fetch the original (metadata),
 set `In-Reply-To`/`References`, prefix `Re: ` once (case-insensitive) and reuse its `threadId`.
 The recipient defaults to Reply-To or From; `--reply-all` adds the original To and Cc minus the
 account's own address (from `users.getProfile`), deduplicated case-insensitively.
@@ -334,12 +347,17 @@ account's own address (from `users.getProfile`), deduplicated case-insensitively
 Labels are given by ID or name (case-insensitive, resolved with one `labels.list` call only when a
 non-system label is used; unknown names are an error). Message vs thread: `--thread` on the CLI,
 exactly one of `message_id`/`thread_id` in MCP. Bodies are plain text only (`--body`, or
-`--body-file PATH|-`; `-` needs `--yes`); attachments and HTML are not supported. All commands
+`--body-file PATH|-`; `-` needs `--yes`); HTML is not supported. `draft create` and `send` take
+`--attach PATH` (repeatable); files are checked and read before any network call, and the dry run and the
+confirmation list names and sizes (never content). The MCP tools `gmail_create_draft` and
+`gmail_send_message` take `attachments[]`, each with exactly one source: `path` (read on the machine
+running gwork), `content_base64` + `filename`, or `message_id` + `attachment_id` (re-attach an existing
+Gmail attachment); `filename` and `content_type` are optional overrides. All commands
 support `--dry-run`, which prints the request as JSON without any network call.
 MCP descriptions instruct the model to ask the user for explicit confirmation before sending or
 trashing, and to prefer drafts.
 
-Story: GWORK-US-0032.
+Stories: GWORK-US-0032, GWORK-US-0035 (attachments).
 
 ### Calendar
 
@@ -373,14 +391,21 @@ Scope `chat.messages.create`.
 
 | Surface | Name | Notes |
 |---|---|---|
-| CLI | `gwork chat send (--space SPACE \| --to EMAIL) (--text TEXT \| --text-file PATH\|-) [--thread THREAD]` | write flags `--yes`, `--dry-run`; confirmation is always required |
-| MCP | `chat_send_message` (`space` xor `user_email`, `text`, `thread?`) | destructive=false, idempotent=false, openWorld=true |
+| CLI | `gwork chat send (--space SPACE \| --to EMAIL) (--text TEXT \| --text-file PATH\|-) [--thread THREAD] [--attach PATH]...` | write flags `--yes`, `--dry-run`; confirmation is always required |
+| MCP | `chat_send_message` (`space` xor `user_email`, `text?`, `thread?`, `attachments?`) | destructive=false, idempotent=false, openWorld=true |
 
 - Posts as the user via `spaces.messages.create`. The target is a space (`spaces/X` or bare `X`)
   or, with `--to`/`user_email`, the **existing** DM with that user, resolved through
   `spaces.findDirectMessage`. gwork never creates spaces: if there is no DM yet the command fails
   and asks the user to start the conversation from Chat.
-- `text` is required and limited to 4096 characters (Chat API limit), validated before any call.
+- `text` is limited to 4096 characters (Chat API limit), validated before any call. It is required
+  unless the message has attachments.
+- Attachments: after resolving the space, each file is uploaded with `media.upload`
+  (`/upload/v1/spaces/X/attachments:upload`, up to 200 MB per file, `chat.MaxAttachmentSize`), and the
+  returned `attachmentDataRef`s are set on the created message. If an upload fails nothing is posted.
+  CLI `--attach PATH` is repeatable; MCP `attachments[]` items have exactly one of `path` (read on
+  the machine running gwork) or `content_base64` + `filename`, plus an optional `content_type`.
+  Chat blocks some file types; Drive files cannot be attached through the API (put the link in the text).
 - `--thread` / `thread` (`spaces/X/threads/Y`) replies in that thread using
   `messageReplyOption=REPLY_MESSAGE_OR_FAIL`, so it fails instead of starting a new thread. The
   thread must belong to the target space.
@@ -391,7 +416,7 @@ Scope `chat.messages.create`.
 - Returns the created message (`name`, `space`, `thread`, `create_time`, `text`, ...), the same
   `Message` type as the read tools.
 
-Story: GWORK-US-0034.
+Stories: GWORK-US-0034, GWORK-US-0036 (attachments).
 
 ## Testing
 

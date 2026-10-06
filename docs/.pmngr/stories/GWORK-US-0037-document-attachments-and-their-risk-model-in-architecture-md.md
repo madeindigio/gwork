@@ -2,12 +2,13 @@
 id: GWORK-US-0037
 type: story
 title: Document attachments and their risk model in architecture.md
-status: backlog
+status: done
 parent: GWORK-EP-0011
 author: mcp
 labels: [docs]
 created: 2026-10-06T10:21:42Z
-updated: 2026-10-06T10:21:42Z
+updated: 2026-10-06T10:32:37Z
+closed: 2026-10-06T10:32:37Z
 ---
 
 ## Description

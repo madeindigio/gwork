@@ -190,10 +190,12 @@ gwork drive download <docId> --out plan.pdf --export-format pdf
 # Writes (after: gwork auth login --write gmail,calendar,chat)
 gwork gmail draft create --to bob@digio.es --subject "Notes" --body-file notes.txt
 gwork gmail draft create --reply-to <messageId> --reply-all --body "Thanks!"
+gwork gmail draft create --to bob@digio.es --subject "Report" --body "Attached." --attach report.pdf
 gwork gmail archive <messageId>
 gwork calendar event create --summary "1:1" --start "2026-10-02T10:00:00+02:00" --duration 30m --attendee bob@digio.es --meet
 gwork calendar event respond <eventId> --response accepted
 gwork chat send --space spaces/AAAA1234 --text "Deploy done" --dry-run
+gwork chat send --to bob@digio.es --text "Logs" --attach build.log
 
 # Chat
 gwork chat spaces --type space
@@ -274,7 +276,7 @@ default `hd` hint). The OAuth client is never a build input.
 ## Limitations
 
 - **Writes are limited**: Drive is read-only; Gmail bodies are plain text
-  without attachments; `chat send` only posts to existing spaces and DMs (it
+  (attachments up to 25 MB in total; Chat up to 200 MB per file); `chat send` only posts to existing spaces and DMs (it
   never creates spaces).
 - **Chat search is client-side**: Google Chat has no user-level full-text
   search API, so `chat search` lists the messages of your spaces since `--since`

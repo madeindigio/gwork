@@ -2,12 +2,14 @@
 id: GWORK-US-0036
 type: story
 title: "Chat attachments: media.upload + message attachment, CLI --attach, MCP attachments"
-status: backlog
+status: done
 parent: GWORK-EP-0011
 author: mcp
 labels: [write, chat, mcp]
 created: 2026-10-06T10:21:42Z
-updated: 2026-10-06T10:21:42Z
+updated: 2026-10-06T10:32:37Z
+started: 2026-10-06T10:22:30Z
+closed: 2026-10-06T10:32:37Z
 ---
 
 ## Description

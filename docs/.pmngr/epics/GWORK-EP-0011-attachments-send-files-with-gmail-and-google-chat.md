@@ -2,12 +2,13 @@
 id: GWORK-EP-0011
 type: epic
 title: "Attachments: send files with Gmail and Google Chat"
-status: backlog
+status: in_progress
 priority: medium
 author: mcp
 labels: [write, gmail, chat, mcp]
 created: 2026-10-06T10:21:30Z
-updated: 2026-10-06T10:21:30Z
+updated: 2026-10-06T10:22:30Z
+started: 2026-10-06T10:22:30Z
 ---
 
 ## Description
